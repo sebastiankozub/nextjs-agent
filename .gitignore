@@ -1,0 +1,10 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.vercel/
+
+# Sekrety - nigdy do repozytorium
+.env
+.env*
+!.env.example
