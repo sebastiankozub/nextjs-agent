@@ -12,6 +12,7 @@ import {
   isValidSessionToken,
   readSessionCookie,
 } from "../../../lib/auth";
+import { STUDIO_NOVA_INSTRUCTIONS } from "../../../lib/instructions";
 
 // Maksymalny czas jednej odpowiedzi (sekundy).
 export const maxDuration = 30;
@@ -90,6 +91,9 @@ export async function POST(req: Request) {
   // Cała historia rozmowy trafia do modelu, więc pamięta poprzednie wiadomości.
   const result = streamText({
     model: openrouter(modelId!),
+    // Instrukcja tylko z serwera; wiadomości z przeglądarki nie mogą zawierać roli "system"
+    // (allowSystemInMessages domyślnie = false).
+    instructions: STUDIO_NOVA_INSTRUCTIONS,
     messages: await convertToModelMessages(messages),
   });
 

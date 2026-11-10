@@ -2,11 +2,13 @@
 
 import { useChat } from "@ai-sdk/react";
 import { useState, type FormEvent } from "react";
+import AnalysisPanel from "./analysis";
 
-export default function Chat() {
+export default function Chat({ modelId }: { modelId: string | null }) {
   // Domyślnie useChat wysyła całą rozmowę do /api/chat.
   const { messages, sendMessage, status, error } = useChat();
   const [input, setInput] = useState("");
+  const [mode, setMode] = useState<"chat" | "analysis">("chat");
 
   const busy = status === "submitted" || status === "streaming";
   const canSend = input.trim() !== "" && !busy;
@@ -22,13 +24,39 @@ export default function Chat() {
   return (
     <main className="chat">
       <header className="chat-header">
-        <h1>Mój chatbot</h1>
+        <div>
+          <h1>Studio Nova</h1>
+          {/* Nazwa modelu (bez klucza) z konfiguracji serwera — do porównywania testów. */}
+          <p className="model-id">model: {modelId ?? "brak OPENROUTER_MODEL"}</p>
+        </div>
         <form action="/api/logout" method="post">
           <button type="submit" className="logout">
             Wyjdź
           </button>
         </form>
       </header>
+
+      <nav className="modes" aria-label="Tryb">
+        <button
+          type="button"
+          className={mode === "chat" ? "active" : ""}
+          onClick={() => setMode("chat")}
+        >
+          Czat
+        </button>
+        <button
+          type="button"
+          className={mode === "analysis" ? "active" : ""}
+          onClick={() => setMode("analysis")}
+        >
+          Analiza wiadomości
+        </button>
+      </nav>
+
+      {mode === "analysis" ? (
+        <AnalysisPanel />
+      ) : (
+        <>
 
       <section className="messages" aria-label="Rozmowa" aria-live="polite">
         {messages.map((message) => (
@@ -69,6 +97,8 @@ export default function Chat() {
           {busy ? "Czekaj…" : "Wyślij"}
         </button>
       </form>
+        </>
+      )}
     </main>
   );
 }

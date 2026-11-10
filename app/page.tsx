@@ -17,7 +17,8 @@ export default async function Home({
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
 
   if (config && isValidSessionToken(token, config)) {
-    return <Chat />;
+    // Tylko nazwa modelu trafia do przeglądarki — klucz API zostaje na serwerze.
+    return <Chat modelId={process.env.OPENROUTER_MODEL ?? null} />;
   }
 
   const { blad } = await searchParams;
