@@ -13,14 +13,14 @@ import {
 } from "../../../lib/auth";
 import {
   analysisSchema,
+  buildAnalysisPrompt,
   interpretModelOutput,
+  parseAnalyzeRequest,
   type AnalysisOutcome,
 } from "../../../lib/analysis";
 import { ANALYSIS_INSTRUCTIONS } from "../../../lib/instructions";
 
 export const maxDuration = 30;
-
-const MAX_MESSAGE_LENGTH = 4000;
 
 function json(body: AnalysisOutcome | { ok: false; kind: string; message: string }, status: number) {
   return Response.json(body, { status });
@@ -85,18 +85,18 @@ export async function POST(req: Request) {
   }
 
   // 3. Wejście: tylko tekst wiadomości. Przeglądarka nie wysyła instrukcji ani opcji.
-  let message: unknown;
+  // Inne pola z przeglądarki (send_now, role, instructions…) są ignorowane.
+  let body: unknown;
   try {
-    ({ message } = await req.json());
+    body = await req.json();
   } catch {
     return fail("input", "Nieprawidłowe zapytanie.", 400);
   }
-  if (typeof message !== "string" || message.trim() === "") {
-    return fail("input", "Wiadomość do analizy nie może być pusta.", 400);
+  const input = parseAnalyzeRequest(body);
+  if (!input.ok) {
+    return fail("input", input.message, 400);
   }
-  if (message.length > MAX_MESSAGE_LENGTH) {
-    return fail("input", `Wiadomość jest za długa (max ${MAX_MESSAGE_LENGTH} znaków).`, 400);
-  }
+  const message = input.message;
 
   const openrouter = createOpenRouter({ apiKey });
   // require_parameters: OpenRouter kieruje zapytanie tylko do dostawców,
@@ -110,7 +110,8 @@ export async function POST(req: Request) {
       model,
       instructions: ANALYSIS_INSTRUCTIONS,
       // Wiadomość klienta to wyłącznie dane do analizy.
-      prompt: `Wiadomość klienta do analizy:\n<<<\n${message.trim()}\n>>>`,
+      // Znaczniki <<< >>> w tekście klienta są neutralizowane (W3).
+      prompt: buildAnalysisPrompt(message),
       output: Output.object({
         name: "studio_nova_analysis",
         description: "Analiza wiadomości klienta Studio Nova",

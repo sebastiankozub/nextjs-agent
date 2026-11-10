@@ -109,3 +109,43 @@ export function interpretModelOutput(input: {
 
   return validateAnalysis(json);
 }
+
+// --- W3: ochrona przed prompt injection ---
+
+export const MAX_MESSAGE_LENGTH = 4000;
+
+/**
+ * Neutralizuje znaczniki granic danych (<<< i >>>) w tekście klienta,
+ * żeby nie mógł "zamknąć" bloku danych i udawać instrukcji serwera.
+ */
+export function neutralizeDelimiters(text: string): string {
+  return text.replace(/<{3,}/g, "‹‹‹").replace(/>{3,}/g, "›››");
+}
+
+/** Prompt analizy: wiadomość klienta zawsze jako dane między znacznikami. */
+export function buildAnalysisPrompt(message: string): string {
+  return `Wiadomość klienta do analizy:\n<<<\n${neutralizeDelimiters(message.trim())}\n>>>`;
+}
+
+export type AnalyzeRequest =
+  | { ok: true; message: string }
+  | { ok: false; message: string };
+
+/**
+ * Z ciała żądania z przeglądarki bierze WYŁĄCZNIE pole "message".
+ * Inne pola (send_now, role, instructions, schema…) są ignorowane —
+ * nie trafiają do modelu i nie zmieniają działania serwera.
+ */
+export function parseAnalyzeRequest(body: unknown): AnalyzeRequest {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, message: "Nieprawidłowe zapytanie." };
+  }
+  const message = (body as Record<string, unknown>).message;
+  if (typeof message !== "string" || message.trim() === "") {
+    return { ok: false, message: "Wiadomość do analizy nie może być pusta." };
+  }
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    return { ok: false, message: `Wiadomość jest za długa (max ${MAX_MESSAGE_LENGTH} znaków).` };
+  }
+  return { ok: true, message };
+}
