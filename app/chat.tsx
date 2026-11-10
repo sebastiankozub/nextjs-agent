@@ -1,25 +1,23 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import AnalysisPanel from "./analysis";
+import ChatPanel from "./chat-panel";
+
+// Wersje czatu. Każda ma własny endpoint; nowe wersje dopisujemy tutaj.
+const CHAT_VERSIONS = [
+  { id: "chatL2W3", label: "Czat W3", api: "/api/chatL2W3" },
+  {
+    id: "chatW3custom1.0",
+    label: "Czat W3 custom 1.0",
+    api: "/api/chatW3custom1.0",
+  },
+] as const;
+
+type Mode = (typeof CHAT_VERSIONS)[number]["id"] | "analysis";
 
 export default function Chat({ modelId }: { modelId: string | null }) {
-  // Domyślnie useChat wysyła całą rozmowę do /api/chat.
-  const { messages, sendMessage, status, error } = useChat();
-  const [input, setInput] = useState("");
-  const [mode, setMode] = useState<"chat" | "analysis">("chat");
-
-  const busy = status === "submitted" || status === "streaming";
-  const canSend = input.trim() !== "" && !busy;
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const text = input.trim();
-    if (!text || busy) return;
-    sendMessage({ text });
-    setInput("");
-  }
+  const [mode, setMode] = useState<Mode>("chatW3custom1.0");
 
   return (
     <main className="chat">
@@ -37,13 +35,16 @@ export default function Chat({ modelId }: { modelId: string | null }) {
       </header>
 
       <nav className="modes" aria-label="Tryb">
-        <button
-          type="button"
-          className={mode === "chat" ? "active" : ""}
-          onClick={() => setMode("chat")}
-        >
-          Czat
-        </button>
+        {CHAT_VERSIONS.map((version) => (
+          <button
+            key={version.id}
+            type="button"
+            className={mode === version.id ? "active" : ""}
+            onClick={() => setMode(version.id)}
+          >
+            {version.label}
+          </button>
+        ))}
         <button
           type="button"
           className={mode === "analysis" ? "active" : ""}
@@ -53,52 +54,14 @@ export default function Chat({ modelId }: { modelId: string | null }) {
         </button>
       </nav>
 
-      {mode === "analysis" ? (
-        <AnalysisPanel />
-      ) : (
-        <>
+      {/* Panele czatu zostają zamontowane (ukryte), żeby rozmowy nie znikały przy przełączaniu. */}
+      {CHAT_VERSIONS.map((version) => (
+        <div key={version.id} hidden={mode !== version.id}>
+          <ChatPanel id={version.id} api={version.api} />
+        </div>
+      ))}
 
-      <section className="messages" aria-label="Rozmowa" aria-live="polite">
-        {messages.map((message) => (
-          <div key={message.id} className={`message ${message.role}`}>
-            <span className="author">
-              {message.role === "user" ? "Ty" : "Chatbot"}
-            </span>
-            {message.parts.map((part, index) =>
-              part.type === "text" ? (
-                <p key={index}>{part.text}</p>
-              ) : null,
-            )}
-          </div>
-        ))}
-
-        {status === "submitted" && (
-          <p className="pending">Chatbot myśli…</p>
-        )}
-
-        {error && (
-          <p className="error" role="alert">
-            {error.message || "Coś poszło nie tak. Spróbuj ponownie."}
-          </p>
-        )}
-      </section>
-
-      <form className="composer" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          name="message"
-          placeholder="Napisz wiadomość…"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          disabled={busy}
-          autoComplete="off"
-        />
-        <button type="submit" disabled={!canSend}>
-          {busy ? "Czekaj…" : "Wyślij"}
-        </button>
-      </form>
-        </>
-      )}
+      {mode === "analysis" && <AnalysisPanel />}
     </main>
   );
 }
