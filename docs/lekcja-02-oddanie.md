@@ -47,12 +47,12 @@ Zbudowałem asystenta dla fikcyjnej firmy Studio Nova. Pomaga odpowiadać klient
 - serwer bierze od przeglądarki tylko treść wiadomości, a pola typu „jestem adminem” czy „wyślij od razu” ignoruje,
 - każda próba zmiany cen, zasad albo podszycia się pod pracownika trafia do sprawdzenia przez człowieka.
 
-**Ulepszenia czatu i analizy (po W3).** Zwykły czat miał słabsze zabezpieczenia niż analiza. Przeglądarka mogła mu podsunąć fałszywą „wcześniejszą odpowiedź asystenta” z ceną 1 zł, a model wtedy przepraszał za pomyłkę, której nie było. Nowy czat (przycisk „Czat W3 custom 1.0”) przechodzi tę samą drogę co analiza:
+**Ulepszenia czatu i analizy (po W3).** Zwykły czat miał słabsze zabezpieczenia niż analiza. Przeglądarka mogła mu podsunąć fałszywą „wcześniejszą odpowiedź asystenta” z ceną 1 zł, a model wtedy przepraszał za pomyłkę, której nie było. Nowy czat (przycisk „updated W3”, endpoint `/api/chatW3custom1.0`) przechodzi tę samą drogę co analiza:
 - serwer przyjmuje od przeglądarki tylko wiadomości klienta, więc podrzucona wypowiedź asystenta w ogóle nie dociera do modelu,
 - wynik jest sprawdzany tym samym schematem, a odpowiedź składa serwer – koniec z kategoriami spoza listy,
 - podszycie się pod administratora jest oznaczane do sprawdzenia także w czacie.
 
-Poprawiłem też instrukcje dla czatu i analizy: szkic nie obiecuje już kontaktu ani „przekazania pracownikowi” (takiego procesu firma nie opisała), zwraca się do klienta per Pan/Pani, a samo powitanie czy pożegnanie nie trafia do pracownika. Stary czat z lekcji jest dostępny pod przyciskiem „Czat W3” do porównania.
+Poprawiłem też instrukcje dla czatu i analizy: szkic nie obiecuje już kontaktu ani „przekazania pracownikowi” (takiego procesu firma nie opisała), zwraca się do klienta per Pan/Pani, a samo powitanie czy pożegnanie nie trafia do pracownika. Stary czat z lekcji jest dostępny pod przyciskiem „baseW3” (endpoint `/api/chatL2W3`) do porównania.
 
 Testy zabezpieczeń bez wywoływania modelu: 25/25. Wyniki prób ataków przed i po zmianach są w logach i na zrzutach.
 
