@@ -10,6 +10,11 @@ import {
   parseChatRequest,
   formatChatReply,
 } from "../lib/analysis.ts";
+import {
+  ANALYSIS_INSTRUCTIONS,
+  CHAT_W3_CUSTOM_1_0_INSTRUCTIONS,
+  STUDIO_NOVA_INSTRUCTIONS,
+} from "../lib/instructions.ts";
 
 const valid = {
   category: "sales",
@@ -198,4 +203,25 @@ test("custom1.0: odpowiedź czatu składa serwer z wyniku po walidacji", () => {
   assert.match(text, /^Kategoria: sales/);
   assert.match(text, /Szkic: Konsultacja online trwa 45 minut i kosztuje 150 zł brutto\./);
   assert.match(text, /needs_review = true/);
+});
+
+// --- Wersja 1.0 instrukcji: wspólna dla Analizy i czatu custom 1.0 ---
+
+test("v1.0: czat custom 1.0 = dokładnie instrukcja Analizy + kontekst rozmowy", () => {
+  assert.ok(CHAT_W3_CUSTOM_1_0_INSTRUCTIONS.startsWith(ANALYSIS_INSTRUCTIONS));
+  assert.match(CHAT_W3_CUSTOM_1_0_INSTRUCTIONS, /wcześniejsze wiadomości klienta/);
+});
+
+test("v1.0: Analiza ma zasady A+B+C+D i nie każe 'kierować sprawy do pracownika'", () => {
+  assert.doesNotMatch(ANALYSIS_INSTRUCTIONS, /skieruj sprawę do pracownika/);
+  assert.match(ANALYSIS_INSTRUCTIONS, /Nie obiecuj w szkicu kontaktu/); // B
+  assert.match(ANALYSIS_INSTRUCTIONS, /Pan\/Pani/); // C
+  assert.match(ANALYSIS_INSTRUCTIONS, /pożegnanie/); // D
+  assert.match(ANALYSIS_INSTRUCTIONS, /podaje się za pracownika/); // reguła W3
+});
+
+test("v1.0: stary czat W3 (L2W3) zachowuje instrukcję z lekcji 2", () => {
+  assert.match(STUDIO_NOVA_INSTRUCTIONS, /skieruj sprawę do pracownika/);
+  assert.match(STUDIO_NOVA_INSTRUCTIONS, /Przykład 1/);
+  assert.doesNotMatch(STUDIO_NOVA_INSTRUCTIONS, /Nie obiecuj w szkicu kontaktu/);
 });
