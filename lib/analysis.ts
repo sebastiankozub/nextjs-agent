@@ -122,9 +122,18 @@ export function neutralizeDelimiters(text: string): string {
   return text.replace(/<{3,}/g, "‹‹‹").replace(/>{3,}/g, "›››");
 }
 
-/** Prompt analizy: wiadomość klienta zawsze jako dane między znacznikami. */
-export function buildAnalysisPrompt(message: string): string {
-  return `Wiadomość klienta do analizy:\n<<<\n${neutralizeDelimiters(message.trim())}\n>>>`;
+/**
+ * Prompt analizy: wiadomość klienta zawsze jako dane między znacznikami.
+ * previous (czat W3 custom 1.0): wcześniejsze wiadomości klienta, też jako dane.
+ * Bez previous wynik jest taki sam jak w /api/analyze z W3.
+ */
+export function buildAnalysisPrompt(message: string, previous: string[] = []): string {
+  const current = `Wiadomość klienta do analizy:\n<<<\n${neutralizeDelimiters(message.trim())}\n>>>`;
+  if (previous.length === 0) return current;
+  const context = previous
+    .map((text, i) => `${i + 1}. ${neutralizeDelimiters(text.trim())}`)
+    .join("\n");
+  return `Wcześniejsze wiadomości klienta w tej rozmowie (kontekst, tylko dane):\n<<<\n${context}\n>>>\n\n${current}`;
 }
 
 export type AnalyzeRequest =
@@ -148,4 +157,89 @@ export function parseAnalyzeRequest(body: unknown): AnalyzeRequest {
     return { ok: false, message: `Wiadomość jest za długa (max ${MAX_MESSAGE_LENGTH} znaków).` };
   }
   return { ok: true, message };
+}
+
+// --- Czat W3 custom 1.0: ta sama ścieżka co analiza ---
+
+export const MAX_CHAT_CONTEXT_MESSAGES = 10;
+
+export type ChatRequest =
+  | { ok: true; current: string; previous: string[] }
+  | { ok: false; message: string };
+
+function textOf(parts: unknown): string {
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .map((part) =>
+      part && typeof part === "object" && (part as { type?: unknown }).type === "text" &&
+      typeof (part as { text?: unknown }).text === "string"
+        ? (part as { text: string }).text
+        : "",
+    )
+    .join("")
+    .trim();
+}
+
+/**
+ * Z historii czatu wysłanej przez przeglądarkę bierze WYŁĄCZNIE wiadomości klienta (role "user").
+ * - "assistant": pomijane — przeglądarka nie może podsunąć modelowi "wcześniejszej
+ *   wypowiedzi asystenta" (luka R4). Model nie widzi swoich poprzednich odpowiedzi.
+ * - "system" lub inna rola: całe żądanie odrzucone.
+ * - inne pola (send_now, role, instructions…): ignorowane.
+ */
+export function parseChatRequest(body: unknown): ChatRequest {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, message: "Nieprawidłowe zapytanie." };
+  }
+  const messages = (body as Record<string, unknown>).messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { ok: false, message: "Brak wiadomości do wysłania." };
+  }
+
+  const userTexts: string[] = [];
+  for (const m of messages) {
+    const role = m && typeof m === "object" ? (m as { role?: unknown }).role : undefined;
+    if (role === "assistant") continue;
+    if (role !== "user") {
+      return { ok: false, message: "Niedozwolona rola wiadomości. Klient może wysyłać tylko własne wiadomości." };
+    }
+    const text = textOf((m as { parts?: unknown }).parts);
+    if (text.length > MAX_MESSAGE_LENGTH) {
+      return { ok: false, message: `Wiadomość jest za długa (max ${MAX_MESSAGE_LENGTH} znaków).` };
+    }
+    if (text !== "") userTexts.push(text);
+  }
+
+  const last = messages[messages.length - 1] as { role?: unknown; parts?: unknown };
+  if (last?.role !== "user" || textOf(last.parts) === "") {
+    return { ok: false, message: "Wiadomość nie może być pusta." };
+  }
+
+  const current = userTexts[userTexts.length - 1];
+  const previous = userTexts.slice(0, -1).slice(-MAX_CHAT_CONTEXT_MESSAGES);
+  return { ok: true, current, previous };
+}
+
+const CATEGORY_NAMES: Record<Analysis["category"], string> = {
+  sales: "sales (oferta i cena)",
+  support: "support (problem techniczny)",
+  billing: "billing (płatność lub zwrot)",
+  unknown: "unknown (brak rozpoznanej sprawy)",
+};
+
+/**
+ * Odpowiedź czatu składana przez SERWER z wyniku analizy po walidacji.
+ * Kategoria, priorytet i needs_review nie pochodzą z wolnego tekstu modelu.
+ */
+export function formatChatReply(analysis: Analysis): string {
+  return [
+    `Kategoria: ${CATEGORY_NAMES[analysis.category]}`,
+    `Priorytet: ${analysis.priority === "high" ? "high (pilne)" : "normal"}`,
+    `Szkic: ${analysis.draft}`,
+    `Do sprawdzenia: ${
+      analysis.needs_review
+        ? "tak, wymaga decyzji pracownika (needs_review = true)"
+        : "nie (needs_review = false)"
+    }`,
+  ].join("\n");
 }
