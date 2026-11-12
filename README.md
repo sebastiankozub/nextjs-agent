@@ -136,6 +136,22 @@ Pod odpowiedzią o zdjęciu i pod wygenerowanym obrazem widać „model: …” 
 (`response.modelId`), a nie z konfiguracji interfejsu. Uwaga: provider OpenRouter dla obrazów
 (`@openrouter/ai-sdk-provider` 3.1.0) przepisuje tu nazwę modelu z zapytania – API obrazów nie zwraca własnej.
 
+## Analiza zdjęć dokumentów (lekcja 3, W2 „dla szybkich”)
+
+Panel „Analiza wiadomości” → „Dodaj zdjęcie” → `/api/analyze-image` (sesja → 401, JPG/PNG/WEBP ≤ 4 MB,
+bez streamingu, model `OPENROUTER_MODEL`). Wynik to koperta:
+
+- **header** (wspólny): `typ_dokumentu`, `czytelnosc`, `needs_review`, `powod_sprawdzenia`, `pola_niepewne`,
+- **body** (pola typu, walidowane schematem Zod): wizytówka, paragon / faktura, zrzut wiadomości
+  (odczytany tekst + analiza z lekcji 2), inne.
+
+Dwa kroki: (1) model rozpoznaje typ i wypełnia nagłówek, (2) serwer bierze z rejestru schemat i instrukcję
+dla tego typu, model wypełnia body. Potem kontrole serwera (format e-maila/telefonu, NIP, suma pozycji
+paragonu). Ostateczne `needs_review` składa serwer: nagłówek, czytelność, pola niepewne, kontrole, analiza.
+
+**Nowy typ dokumentu** = nowy wpis w `DOCUMENT_TYPES` w `lib/documents.ts` (etykieta, kiedy go wybrać,
+pola, schemat body, instrukcja, opcjonalne kontrole). Endpoint i panel nie wymagają zmian.
+
 ## Struktura
 
 - `app/chat.tsx` — przyciski czatów i analizy,
@@ -146,5 +162,7 @@ Pod odpowiedzią o zdjęciu i pod wygenerowanym obrazem widać „model: …” 
 - `lib/analysis-run.ts`, `lib/analysis.ts` — analiza JSON, schemat i walidacja,
 - `lib/instructions.ts` — instrukcje (charakter) chatbota,
 - `lib/tools.ts` — własne narzędzia,
+- `lib/documents.ts` — rejestr typów dokumentów (schematy header/body, instrukcje, kontrole),
+- `lib/analyze-image-run.ts`, `app/api/analyze-image/route.ts` — analiza zdjęcia w dwóch krokach,
 - `app/api/image/route.ts` — generowanie obrazu,
 - `docs/` — opisy oddanych prac i zrzuty ekranu.

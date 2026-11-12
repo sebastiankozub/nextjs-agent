@@ -32,7 +32,7 @@ export type AnalysisOutcome =
   | { ok: true; analysis: Analysis }
   | { ok: false; kind: AnalysisErrorKind; message: string; details?: string[] };
 
-function describeIssue(issue: z.core.$ZodIssue): string {
+export function describeIssue(issue: z.core.$ZodIssue): string {
   const field = issue.path.length > 0 ? issue.path.join(".") : "(obiekt)";
   switch (issue.code) {
     case "invalid_type":

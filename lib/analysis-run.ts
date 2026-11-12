@@ -22,7 +22,7 @@ function fail(kind: string, message: string, status: number): RunResult {
   return { ok: false, kind, message, status };
 }
 
-function describeProviderError(error: APICallError): RunResult {
+export function describeProviderError(error: APICallError): RunResult {
   const body = (error.responseBody ?? "").toLowerCase();
   // OpenRouter z require_parameters: brak dostawcy obsługującego structured output.
   if (
