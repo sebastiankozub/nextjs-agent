@@ -10,7 +10,7 @@ type Analysis = {
 };
 
 type Outcome =
-  | { ok: true; analysis: Analysis }
+  | { ok: true; analysis: Analysis; reply?: string }
   | { ok: false; kind: string; message: string; details?: string[] };
 
 // Analiza zdjęcia dokumentu: koperta { header, body } z /api/analyze-image.
@@ -221,7 +221,7 @@ export default function AnalysisPanel() {
               </dd>
             </dl>
             <span className="author">Szkic odpowiedzi (niewysłany)</span>
-            <p className="draft">{outcome.analysis.draft}</p>
+            <p className="draft">{outcome.reply ?? outcome.analysis.draft}</p>
           </div>
         )}
 

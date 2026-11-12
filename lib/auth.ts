@@ -69,3 +69,17 @@ export const sessionCookieOptions = {
   secure: process.env.NODE_ENV === "production",
   path: "/",
 };
+
+// --- Podpis odpowiedzi czatu (czat ujednolicony, wariant A) ---
+// Serwer podpisuje KAŻDĄ sprawdzoną odpowiedź. Przy kolejnym zapytaniu przyjmuje
+// wiadomość asystenta z przeglądarki tylko z poprawnym podpisem – podrobiona
+// „wcześniejsza wypowiedź asystenta” (luka R4 z L2W3) zostaje odrzucona.
+// Osobny prefiks, żeby podpisu odpowiedzi nie dało się użyć jako tokenu sesji.
+
+export function signReply(text: string, config: AuthConfig): string {
+  return sign(`reply.v1|${text}`, config.secret);
+}
+
+export function isValidReplySignature(text: string, signature: unknown, config: AuthConfig): boolean {
+  return typeof signature === "string" && safeEqual(signature, signReply(text, config));
+}

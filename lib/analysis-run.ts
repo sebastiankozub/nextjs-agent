@@ -9,8 +9,8 @@ import {
 import { analysisSchema, interpretModelOutput, type AnalysisOutcome } from "./analysis";
 
 // Wspólne wywołanie modelu dla analizy wiadomości. Używają go:
-// - /api/analyze (W2/W3),
-// - /api/chatW3custom1.0 (czat z tą samą ścieżką bezpieczeństwa).
+// - /api/analyze (panel „Analiza wiadomości”).
+// Ten sam schemat i walidację (validateAnalysis) używa czat: lib/agent-chat.ts.
 // Zawsze: structured output + własna walidacja serwera. Błąd nigdy nie staje się wynikiem.
 
 // Wynik analizy albo błąd konfiguracji/dostawcy (unsupported, provider, incomplete…).

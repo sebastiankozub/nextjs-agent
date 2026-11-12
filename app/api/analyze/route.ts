@@ -3,7 +3,7 @@ import {
   isValidSessionToken,
   readSessionCookie,
 } from "../../../lib/auth";
-import { buildAnalysisPrompt, parseAnalyzeRequest } from "../../../lib/analysis";
+import { buildAnalysisPrompt, buildChatReply, parseAnalyzeRequest } from "../../../lib/analysis";
 import { runAnalysis } from "../../../lib/analysis-run";
 import { ANALYSIS_INSTRUCTIONS } from "../../../lib/instructions";
 
@@ -56,5 +56,9 @@ export async function POST(req: Request) {
     prompt: buildAnalysisPrompt(input.message),
     logTag: "api/analyze",
   });
+  // Tekst odpowiedzi budowany wspólnym kodem – tym samym co w czacie.
+  if (outcome.ok && "analysis" in outcome) {
+    return Response.json({ ...outcome, reply: buildChatReply(outcome.analysis) }, { status });
+  }
   return Response.json(outcome, { status });
 }

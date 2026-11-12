@@ -150,7 +150,7 @@ export default function ChatPanel({
             <span className="author">
               {message.role === "user" ? "Ty" : "Chatbot"}
             </span>
-            <ToolLabels message={message} />
+            <ToolLabels message={message} previous={messages[index - 1]} />
             {message.parts.map((part, i) => {
               if (part.type === "text") return <p key={i}>{part.text}</p>;
               if (part.type === "file" && part.mediaType.startsWith("image/")) {
@@ -179,6 +179,9 @@ export default function ChatPanel({
         ))}
 
         {status === "submitted" && <p className="pending">Chatbot myśli…</p>}
+        {status === "streaming" && !lastHasText(messages) && (
+          <p className="pending">Analizuję…</p>
+        )}
         {generating && <p className="pending">Generuję obraz…</p>}
         {imageGenError && (
           <p className="error" role="alert">
@@ -320,7 +323,15 @@ function Sources({ message }: { message: UIMessage }) {
 }
 
 // Etykiety użytych narzędzi nad odpowiedzią. Brak narzędzi = nic nie pokazujemy.
+// Odpowiedź (tekst po walidacji) już przyszła?
+function lastHasText(messages: UIMessage[]) {
+  const last = messages[messages.length - 1];
+  return last?.role === "assistant" && last.parts.some((p) => p.type === "text");
+}
+
 const TOOL_LABELS: Record<string, string> = {
+  vision: "👁️ analiza zdjęcia",
+  generowanieObrazu: "🎨 generowanie obrazu",
   web_search: "🔎 wyszukiwanie",
   aktualnyCzas: "🕒 aktualnyCzas",
   pogoda: "🌤️ pogoda",
@@ -328,10 +339,14 @@ const TOOL_LABELS: Record<string, string> = {
   kursKrypto: "🦎🪙 kursKrypto",
 };
 
-function ToolLabels({ message }: { message: UIMessage }) {
+function ToolLabels({ message, previous }: { message: UIMessage; previous?: UIMessage }) {
   if (message.role !== "assistant") return null;
 
   const used: string[] = [];
+  // Obraz wygenerowany przyciskiem „Wygeneruj obraz”.
+  if (isGeneratedImageMessage(message)) used.push("generowanieObrazu");
+  // Odpowiedź na wiadomość ze zdjęciem (Vision).
+  else if (previous?.role === "user" && previous.parts.some((p) => p.type === "file")) used.push("vision");
   for (const part of message.parts) {
     let name: string | null = null;
     if (isToolUIPart(part)) name = getToolName(part);

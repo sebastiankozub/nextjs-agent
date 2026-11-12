@@ -1,6 +1,6 @@
 import { getAuthConfig, isValidSessionToken, readSessionCookie } from "../../../lib/auth";
 import { analyzeDocumentImage } from "../../../lib/analyze-image-run";
-import { IMAGE_MAX_BYTES, IMAGE_TYPES } from "../../../lib/chat-handler";
+import { IMAGE_MAX_BYTES, IMAGE_TYPES } from "../../../lib/images";
 
 // Analiza zdjęcia dokumentu -> { header, body } (bez streamingu, z walidacją).
 export const maxDuration = 60;
