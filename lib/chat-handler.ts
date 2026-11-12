@@ -26,12 +26,37 @@ function describeError(error: unknown): string {
       case 402:
         return "Brak środków na koncie OpenRouter dla tego modelu.";
       case 404:
+        if (/image/i.test(error.message)) {
+          return "Ten model nie obsługuje zdjęć. Ustaw w OPENROUTER_MODEL model z Vision (np. google/gemini-3.8-flash).";
+        }
         return "OpenRouter nie zna tego modelu. Sprawdź OPENROUTER_MODEL w .env.local.";
       case 429:
         return "Za dużo zapytań. Odczekaj chwilę i spróbuj ponownie.";
     }
   }
   return "Nie udało się uzyskać odpowiedzi od modelu. Szczegóły są w terminalu serwera.";
+}
+
+// Vision: dozwolone formaty i limit rozmiaru zdjęcia.
+export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+export const IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
+function validateImages(messages: UIMessage[]): string | null {
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type !== "file") continue;
+      if (message.role !== "user") return "Nieprawidłowe zapytanie.";
+      if (!IMAGE_TYPES.includes(part.mediaType)) {
+        return "Dozwolone są tylko zdjęcia JPG, PNG albo WEBP.";
+      }
+      // Przyjmujemy tylko zdjęcia wgrane w przeglądarce (data URL), nie linki z internetu.
+      const match = /^data:[^;]+;base64,(.*)$/.exec(part.url);
+      if (!match) return "Nieprawidłowy format zdjęcia.";
+      const bytes = Math.floor((match[1].length * 3) / 4);
+      if (bytes > IMAGE_MAX_BYTES) return "Zdjęcie jest za duże (maks. 4 MB).";
+    }
+  }
+  return null;
 }
 
 /**
@@ -84,8 +109,15 @@ export function createChatHandler(options: {
       .map((part) => (part.type === "text" ? part.text : ""))
       .join("")
       .trim();
-    if (last.role !== "user" || lastText === "") {
+    const lastHasImage = last.parts.some((part) => part.type === "file");
+    if (last.role !== "user" || (lastText === "" && !lastHasImage)) {
       return textError("Wiadomość nie może być pusta.", 400);
+    }
+
+    // Zdjęcia (Vision): sprawdzamy na serwerze typ i rozmiar, niezależnie od przeglądarki.
+    const imageError = validateImages(messages);
+    if (imageError) {
+      return textError(imageError, 400);
     }
 
     const openrouter = createOpenRouter({ apiKey });
@@ -120,8 +152,12 @@ export function createChatHandler(options: {
         // Źródła z wyszukiwania trafiają do przeglądarki jako części "source-url".
         sendSources: true,
         // Moment pobrania odpowiedzi (czas serwera) – pokazywany jako „pobrano: …”.
-        messageMetadata: ({ part }) =>
-          part.type === "start" ? { fetchedAt: new Date().toISOString() } : undefined,
+        // Metadane odpowiedzi: moment pobrania + model, który NAPRAWDĘ odpowiedział (z odpowiedzi API).
+        messageMetadata: ({ part }) => {
+          if (part.type === "start") return { fetchedAt: new Date().toISOString() };
+          if (part.type === "finish-step") return { modelId: part.response.modelId };
+          return undefined;
+        },
         onError: (error) => {
           console.error(`[${options.logTag}]`, error);
           return describeError(error);

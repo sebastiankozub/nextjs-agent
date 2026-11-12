@@ -164,3 +164,37 @@ body {
   border-radius: 999px;
   background: rgba(127, 127, 127, 0.15);
 }
+
+.thumb {
+  display: block;
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 8px;
+  margin: 0.3rem 0;
+  object-fit: cover;
+}
+
+.model-used {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.generated {
+  display: block;
+  max-width: 100%;
+  width: 360px;
+  border-radius: 8px;
+  margin: 0.3rem 0;
+}

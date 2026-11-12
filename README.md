@@ -125,6 +125,17 @@ Narzędzia z publicznym API zwracają tylko potrzebne pola oraz `zrodlo` i `pobr
 Gdy API nie odpowiada (limit 8 s) albo zwraca błąd — zwracają czytelny komunikat `blad`
 zamiast błędu aplikacji.
 
+## Obrazy w czacie L3 (lekcja 3, warsztat 2)
+
+| Funkcja | Jak działa | Model |
+|---|---|---|
+| **Vision** – „Dodaj zdjęcie” | JPG/PNG/WEBP do 4 MB, wysyłane z wiadomością jako część `file`; miniatura w rozmowie. Typ i rozmiar sprawdzane w przeglądarce i na serwerze (`lib/chat-handler.ts`). | `OPENROUTER_MODEL` (ten sam co czat) |
+| **Generowanie** – „Wygeneruj obraz” | Wpisany tekst (do 500 znaków) → `/api/image` (najpierw sesja → 401) → `generateImage`. Obraz pokazany w rozmowie, ale nie jest wysyłany modelowi czatu. | `OPENROUTER_IMAGE_MODEL` (opcjonalna, domyślnie `google/gemini-3.1-flash-image-preview` – Nano Banana 2) |
+
+Pod odpowiedzią o zdjęciu i pod wygenerowanym obrazem widać „model: …” z metadanych odpowiedzi
+(`response.modelId`), a nie z konfiguracji interfejsu. Uwaga: provider OpenRouter dla obrazów
+(`@openrouter/ai-sdk-provider` 3.1.0) przepisuje tu nazwę modelu z zapytania – API obrazów nie zwraca własnej.
+
 ## Struktura
 
 - `app/chat.tsx` — przyciski czatów i analizy,
@@ -135,4 +146,5 @@ zamiast błędu aplikacji.
 - `lib/analysis-run.ts`, `lib/analysis.ts` — analiza JSON, schemat i walidacja,
 - `lib/instructions.ts` — instrukcje (charakter) chatbota,
 - `lib/tools.ts` — własne narzędzia,
+- `app/api/image/route.ts` — generowanie obrazu,
 - `docs/` — opisy oddanych prac i zrzuty ekranu.

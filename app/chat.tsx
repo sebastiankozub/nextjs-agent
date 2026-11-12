@@ -57,7 +57,7 @@ export default function Chat({ modelId }: { modelId: string | null }) {
       {/* Panele czatu zostają zamontowane (ukryte), żeby rozmowy nie znikały przy przełączaniu. */}
       {CHAT_VERSIONS.map((version) => (
         <div key={version.id} hidden={mode !== version.id}>
-          <ChatPanel id={version.id} api={version.api} />
+          <ChatPanel id={version.id} api={version.api} allowImages={version.id === "chatL2W3"} />
         </div>
       ))}
 
