@@ -26,10 +26,12 @@ body {
   padding: 12px;
 }
 
-.composer { display: flex; gap: 8px; }
+.composer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 .composer input {
-  flex: 1;
+  /* min-width: 0 – pole może się zwężać, zamiast wypychać przyciski poza okno */
+  flex: 1 1 180px;
+  min-width: 0;
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 6px;
@@ -37,6 +39,8 @@ body {
 }
 
 .composer button {
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 10px 16px;
   border: none;
   border-radius: 6px;
@@ -197,4 +201,34 @@ button.link {
   width: 360px;
   border-radius: 8px;
   margin: 0.3rem 0;
+}
+
+.image-hints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.hint-chip {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.hint-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+a.download {
+  display: inline-block;
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
 }

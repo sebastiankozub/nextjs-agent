@@ -130,7 +130,7 @@ zamiast błędu aplikacji.
 | Funkcja | Jak działa | Model |
 |---|---|---|
 | **Vision** – „Dodaj zdjęcie” | JPG/PNG/WEBP do 4 MB, wysyłane z wiadomością jako część `file`; miniatura w rozmowie. Typ i rozmiar sprawdzane w przeglądarce i na serwerze (`lib/chat-handler.ts`). | `OPENROUTER_MODEL` (ten sam co czat) |
-| **Generowanie** – „Wygeneruj obraz” | Wpisany tekst (do 500 znaków) → `/api/image` (najpierw sesja → 401) → `generateImage`. Obraz pokazany w rozmowie, ale nie jest wysyłany modelowi czatu. | `OPENROUTER_IMAGE_MODEL` (opcjonalna, domyślnie `google/gemini-3.1-flash-image-preview` – Nano Banana 2) |
+| **Generowanie** – „Wygeneruj obraz” | Wpisany tekst (do 500 znaków) → `/api/image` (najpierw sesja → 401) → `generateImage`. Obraz pokazany w rozmowie, ale nie jest wysyłany modelowi czatu. | `OPENROUTER_IMAGE_MODEL` (opcjonalna, domyślnie `google/gemini-3.1-flash-image` – Nano Banana 2) |
 
 Pod odpowiedzią o zdjęciu i pod wygenerowanym obrazem widać „model: …” z metadanych odpowiedzi
 (`response.modelId`), a nie z konfiguracji interfejsu. Uwaga: provider OpenRouter dla obrazów

@@ -6,7 +6,7 @@ import { getAuthConfig, isValidSessionToken, readSessionCookie } from "../../../
 // Model obrazów ma osobną zmienną OPENROUTER_IMAGE_MODEL – czat i Vision używają OPENROUTER_MODEL.
 export const maxDuration = 60;
 
-const DEFAULT_IMAGE_MODEL = "google/gemini-3.1-flash-image-preview";
+const DEFAULT_IMAGE_MODEL = "google/gemini-3.1-flash-image";
 const MAX_PROMPT = 500;
 
 function jsonError(error: string, status: number) {

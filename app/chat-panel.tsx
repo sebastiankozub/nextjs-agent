@@ -4,6 +4,13 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
+// Podpowiedzi opisów obrazu w temacie Studio Nova (klik = wstawienie do pola wiadomości).
+const IMAGE_PROMPT_HINTS = [
+  "Grafika na post: zaproszenie na 45-minutową konsultację online Studio Nova, nowoczesny minimalistyczny styl, granat i biel",
+  "Baner na stronę: osoba przy laptopie podczas rozmowy wideo z doradcą, jasne biuro, ciepłe światło, format 16:9",
+  "Ikona do newslettera: kalendarz z dymkiem czatu i gwiazdką, płaska grafika wektorowa, dwa kolory, białe tło",
+];
+
 // Vision: dozwolone formaty i limit (te same zasady sprawdza serwer).
 const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp";
 const IMAGE_TYPES = IMAGE_ACCEPT.split(",");
@@ -72,12 +79,21 @@ export default function ChatPanel({
       if (!res.ok || !data.image) {
         throw new Error(data.error || "Nie udało się wygenerować obrazu.");
       }
+      const mediaType = /^data:([^;]+);/.exec(data.image)?.[1] ?? "image/png";
+      const ext = mediaType.split("/")[1]?.replace("jpeg", "jpg").replace("svg+xml", "svg") ?? "png";
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          parts: [{ type: "file", mediaType: "image/png", url: data.image, filename: "obraz.png" }],
+          parts: [
+            {
+              type: "file",
+              mediaType,
+              url: data.image,
+              filename: `studio-nova-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${ext}`,
+            },
+          ],
           metadata: { generatedImage: true, modelId: data.modelId },
         },
       ]);
@@ -138,14 +154,21 @@ export default function ChatPanel({
             {message.parts.map((part, i) => {
               if (part.type === "text") return <p key={i}>{part.text}</p>;
               if (part.type === "file" && part.mediaType.startsWith("image/")) {
+                const generated = isGeneratedImageMessage(message);
                 return (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={i}
-                    className={isGeneratedImageMessage(message) ? "generated" : "thumb"}
-                    src={part.url}
-                    alt={part.filename ?? "Wysłane zdjęcie"}
-                  />
+                  <div key={i}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className={generated ? "generated" : "thumb"}
+                      src={part.url}
+                      alt={part.filename ?? "Wysłane zdjęcie"}
+                    />
+                    {generated && (
+                      <a className="download" href={part.url} download={part.filename ?? "obraz.png"}>
+                        Pobierz
+                      </a>
+                    )}
+                  </div>
                 );
               }
               return null;
@@ -227,6 +250,24 @@ export default function ChatPanel({
           </button>
         )}
       </form>
+
+      {allowImages && (
+        <div className="image-hints" aria-label="Podpowiedzi opisów obrazu">
+          <span>Pomysły na obraz:</span>
+          {IMAGE_PROMPT_HINTS.map((hint) => (
+            <button
+              key={hint}
+              type="button"
+              className="hint-chip"
+              onClick={() => setInput(hint)}
+              disabled={busy}
+              title={hint}
+            >
+              {hint.split(":")[0]}
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }
