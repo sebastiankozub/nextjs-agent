@@ -3,7 +3,6 @@ import {
   APICallError,
   createUIMessageStream,
   createUIMessageStreamResponse,
-  hasToolCall,
   isStepCount,
   streamText,
   tool,
@@ -20,15 +19,11 @@ import {
   neutralizeDelimiters,
   validateAnalysis,
 } from "./analysis";
-import {
-  getAuthConfig,
-  isValidReplySignature,
-  isValidSessionToken,
-  readSessionCookie,
-  signReply,
-} from "./auth";
+import { getAuthConfig, isValidReplySignature, signReply } from "./auth";
+import { z } from "zod";
 import { validateImages } from "./images";
-import { CHAT_AGENT_INSTRUCTIONS } from "./instructions";
+import { generateStudioImage, MAX_IMAGE_PROMPT } from "./image-gen";
+import { CHAT_AGENT_INSTRUCTIONS, MAX_AGENT_STEPS } from "./instructions";
 import { aktualnyCzas, kursKrypto, kursWaluty, pogoda } from "./tools";
 
 // Czat ujednolicony = narzędzia i streaming z L3 + walidacja i bezpieczeństwo z L2W3.
@@ -39,6 +34,8 @@ import { aktualnyCzas, kursKrypto, kursWaluty, pogoda } from "./tools";
 // i sam składa tekst (buildChatReply). Wolny tekst modelu NIE trafia do przeglądarki.
 
 const ANSWER_TOOL = "odpowiedz";
+const MAX_STEPS = MAX_AGENT_STEPS;
+const STEP_LIMIT_REPLY = `Przerwałem po ${MAX_STEPS} krokach. Zadanie wymaga więcej kroków – podziel je na mniejsze pytania.`;
 const FALLBACK_REPLY =
   "Nie udało się przygotować sprawdzonej odpowiedzi. Spróbuj ponownie albo zadaj pytanie inaczej.";
 
@@ -130,6 +127,12 @@ function toModelMessages(
   return { ok: true, messages: trimmed };
 }
 
+/** Krok zawiera wywołanie „odpowiedz” i ŻADNEGO innego narzędzia. */
+function isPureAnswerStep(step: { toolCalls: Array<{ toolName: string }> } | undefined): boolean {
+  if (!step || step.toolCalls.length === 0) return false;
+  return step.toolCalls.every((call) => call.toolName === ANSWER_TOOL);
+}
+
 /** Filtr strumienia: przepuszcza postęp, blokuje wolny tekst i surowe argumenty „odpowiedz”. */
 function isHidden(chunk: UIMessageChunk, answerCallIds: Set<string>): boolean {
   switch (chunk.type) {
@@ -148,26 +151,18 @@ function isHidden(chunk: UIMessageChunk, answerCallIds: Set<string>): boolean {
   return false;
 }
 
-export async function POST(req: Request) {
-  // 1. Sesja – bez niej model nie jest wywoływany.
-  const authConfig = getAuthConfig();
-  if (!authConfig || !isValidSessionToken(readSessionCookie(req), authConfig)) {
-    return textError("Brak dostępu: sesja wygasła lub nie wpisano hasła. Odśwież stronę i zaloguj się.", 401);
-  }
-
+/**
+ * Tryb "chat" endpointu /api/agent. Sesję sprawdza endpoint przed wywołaniem.
+ * body: { messages: UIMessage[] } (z useChat).
+ */
+export async function handleChat(body: unknown, authConfig: AuthConfig): Promise<Response> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const modelId = process.env.OPENROUTER_MODEL;
   if (!apiKey || !modelId) {
     return textError("Brak konfiguracji OPENROUTER_API_KEY lub OPENROUTER_MODEL w .env.local.", 500);
   }
 
-  // 2. Wejście.
-  let messages: UIMessage[];
-  try {
-    messages = (await req.json())?.messages;
-  } catch {
-    return textError("Nieprawidłowe zapytanie.", 400);
-  }
+  const messages = (body as { messages?: unknown } | null)?.messages as UIMessage[];
   if (!Array.isArray(messages) || messages.length === 0) {
     return textError("Brak wiadomości do wysłania.", 400);
   }
@@ -189,6 +184,7 @@ export async function POST(req: Request) {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       let finalReply: string | null = null;
+      let imagesThisTurn = 0;
 
       const result = streamText({
         model: openrouter(modelId),
@@ -200,6 +196,36 @@ export async function POST(req: Request) {
           pogoda,
           kursWaluty,
           kursKrypto,
+          // Generowanie obrazu: obraz idzie do przeglądarki (wynik narzędzia),
+          // model dostaje tylko krótki tekst (toModelOutput). Maks. 1 obraz na turę.
+          generujObraz: tool({
+            description:
+              "Generuje obraz (grafikę, plakat, ilustrację) z opisu. Użyj, gdy użytkownik prosi o obraz. " +
+              "Gdy obraz zależy od danych (np. pogody), najpierw zbierz je innymi narzędziami i uwzględnij w opisie.",
+            inputSchema: z.object({
+              opis: z
+                .string()
+                .min(3)
+                .max(MAX_IMAGE_PROMPT)
+                .describe("Szczegółowy opis obrazu po polsku lub angielsku (maks. 500 znaków)"),
+            }),
+            execute: async ({ opis }) => {
+              if (imagesThisTurn >= 1) {
+                return { blad: "W jednej odpowiedzi można wygenerować tylko jeden obraz." };
+              }
+              imagesThisTurn++;
+              const result = await generateStudioImage(opis, "api/agent generujObraz");
+              if (!result.ok) return { blad: result.error };
+              return { image: result.image, modelId: result.modelId, opis };
+            },
+            toModelOutput: ({ output }) => ({
+              type: "text",
+              value:
+                output && "blad" in output && output.blad
+                  ? `Nie udało się wygenerować obrazu: ${output.blad}`
+                  : "Obraz wygenerowany i pokazany użytkownikowi.",
+            }),
+          }),
           // Jedyna droga do odpowiedzi: argumenty sprawdza schemat Zod (inputSchema),
           // potem wspólna walidacja serwera i budowanie tekstu.
           [ANSWER_TOOL]: tool({
@@ -219,7 +245,10 @@ export async function POST(req: Request) {
         },
         // Model musi w każdym kroku wywołać narzędzie – nie ma drogi „zwykłym tekstem”.
         toolChoice: "required",
-        stopWhen: [hasToolCall(ANSWER_TOOL), isStepCount(6)],
+        // Koniec tylko wtedy, gdy ostatni krok to SAMO „odpowiedz”. Gdy model wywoła „odpowiedz”
+        // równolegle z innym narzędziem (np. generujObraz), odpowiedź powstała bez wyników tych
+        // narzędzi – pętla idzie dalej, żeby model odpowiedział jeszcze raz, już znając wyniki.
+        stopWhen: [({ steps }) => isPureAnswerStep(steps.at(-1)), isStepCount(MAX_STEPS)],
       });
 
       const uiStream = toUIMessageStream({
@@ -232,7 +261,7 @@ export async function POST(req: Request) {
           return undefined;
         },
         onError: (error) => {
-          console.error("[api/chat]", error);
+          console.error("[api/agent chat]", error);
           return describeError(error);
         },
       });
@@ -257,7 +286,15 @@ export async function POST(req: Request) {
       if (!failed) {
         const id = "answer";
         writer.write({ type: "text-start", id });
-        const reply = finalReply ?? FALLBACK_REPLY;
+        // Odpowiedź liczy się tylko z kroku „czystego” (samo odpowiedz). Inaczej: limit kroków
+        // („Przerwałem po N krokach”) albo inny problem – nigdy pusta odpowiedź.
+        const steps = await result.steps;
+        const answered = finalReply !== null && isPureAnswerStep(steps.at(-1));
+        const reply = answered
+          ? finalReply!
+          : steps.length >= MAX_STEPS
+            ? STEP_LIMIT_REPLY
+            : FALLBACK_REPLY;
         writer.write({ type: "text-delta", id, delta: reply });
         writer.write({ type: "text-end", id });
         // Podpis serwera – przy następnym zapytaniu potwierdza, że to nasza odpowiedź.

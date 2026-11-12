@@ -15,12 +15,18 @@ Otwórz http://localhost:3000 i zaloguj się hasłem. Konfiguracja w `.env.local
 
 ## Czat i Analiza wiadomości
 
-W aplikacji są dwa tryby (`app/chat.tsx`):
+Jeden endpoint agenta **`/api/agent`** (lekcja 3, W3) z polem `mode`. Najpierw sesja (401), potem tryb:
 
-| Przycisk | Endpoint | Na czym polega |
+| Tryb | Kto używa | Co zwraca |
 |---|---|---|
-| **Czat** | `/api/chat` → `lib/agent-chat.ts` | Narzędzia, zdjęcia i obrazy; postęp na żywo, odpowiedź **po walidacji Zod** |
-| **Analiza wiadomości** | `/api/analyze`, `/api/analyze-image` | Pełny wynik analizy (kategoria, priorytet, szkic, needs_review) dla wiadomości albo zdjęcia dokumentu |
+| `mode: "chat"` → `lib/agent-chat.ts` | przycisk **Czat** | Streaming postępu (narzędzia, źródła, generowanie obrazu) + **tylko treść odpowiedzi** po walidacji Zod |
+| `mode: "analyze"` → `lib/agent-analyze.ts` | panel **Analiza wiadomości** | **Wynik ustrukturyzowany JSON**: `{ message }` → kategoria, priorytet, szkic, needs_review; `{ image }` → header + body dokumentu. Bez streamingu i bez narzędzi |
+
+Oba tryby korzystają z tego samego schematu (`analysisSchema`), walidacji (`validateAnalysis`)
+i budowania odpowiedzi (`buildChatReply`). Przycisk „Wygeneruj obraz” (`/api/image`) i narzędzie czatu
+`generujObraz` używają wspólnej funkcji `lib/image-gen.ts`.
+
+Endpointy `/api/chat`, `/api/analyze`, `/api/analyze-image` są przestarzałe (do usunięcia po testach `/api/agent`).
 
 Do lekcji 3 były dwa osobne czaty: **baseW3** (streaming + narzędzia, bez walidacji odpowiedzi)
 i **L2W3 no stream** (analiza JSON + walidacja, bez narzędzi). Teraz to jeden czat, który łączy oba podejścia.
@@ -44,7 +50,7 @@ Przykład: „Jaka będzie jutro pogoda w Krakowie?”
 4. Krok 1: `aktualnyCzas` → 🕒. Krok 2: `pogoda` → 🌤️. Etykiety idą do przeglądarki na żywo.
 5. Ostatni krok: narzędzie `odpowiedz` z argumentami w schemacie analizy (`category`, `priority`, `draft`, `needs_review`).
    AI SDK sprawdza je schematem Zod, potem `execute()` uruchamia **wspólny kod**:
-   `validateAnalysis` → `buildChatReply`. `stopWhen: hasToolCall("odpowiedz")` kończy pętlę (maks. 6 kroków).
+   `validateAnalysis` → `buildChatReply`. `stopWhen` kończy pętlę, gdy ostatni krok to samo `odpowiedz` (bez innych narzędzi w tym kroku) (maks. `MAX_AGENT_STEPS` kroków, `lib/instructions.ts`; po limicie odpowiedź „Przerwałem po N krokach”).
 6. Serwer wysyła **sprawdzony** tekst odpowiedzi i jego podpis (`replySig`).
    Wolny tekst modelu i surowe argumenty `odpowiedz` są odfiltrowane na serwerze – nigdy nie trafiają do przeglądarki.
 
@@ -79,6 +85,7 @@ Nad odpowiedzią czat pokazuje etykiety użytych narzędzi, pod odpowiedzią —
 | 🌤️ pogoda | `pogoda` — miasto, opcjonalnie data i godzina | Open-Meteo (geocoding + forecast) |
 | 💱 kursWaluty | `kursWaluty` — kod lub polska nazwa waluty → kurs średni vs PLN | NBP (tabele A i B) |
 | 🦎🪙 kursKrypto | `kursKrypto` — symbol, nazwa lub id kryptowaluty → cena w PLN i USD, zmiana 24 h | CoinGecko (publiczne API bez klucza; opcjonalnie `COINGECKO_DEMO_API_KEY`) |
+| 🎨 generowanie obrazu | `generujObraz` — opis (≤ 500 znaków) → obraz w czacie; model dostaje tylko „obraz wygenerowany” (`toModelOutput`); maks. 1 obraz na odpowiedź | `OPENROUTER_IMAGE_MODEL` (wspólne `lib/image-gen.ts`) |
 
 Narzędzia z publicznym API zwracają tylko potrzebne pola oraz `zrodlo` i `pobrano`.
 Gdy API nie odpowiada (limit 8 s) albo zwraca błąd — zwracają czytelny komunikat `blad`
@@ -117,7 +124,10 @@ pola, schemat body, instrukcja, opcjonalne kontrole). Endpoint i panel nie wymag
 - `app/chat-panel.tsx` — okno rozmowy, etykiety narzędzi, źródła, zdjęcia, generowanie obrazu,
 - `app/analysis.tsx` — panel „Analiza wiadomości”,
 - `app/api/*` — endpointy (logowanie, czat, analiza, analiza zdjęć, obrazy),
-- `lib/agent-chat.ts` — czat: pętla narzędzi, odpowiedź przez `odpowiedz` (Zod), filtr strumienia, podpisana historia,
+- `app/api/agent/route.ts` — jeden endpoint agenta (mode chat / analyze),
+- `lib/agent-analyze.ts` — tryb analyze (JSON),
+- `lib/image-gen.ts` — wspólne generowanie obrazu,
+- `lib/agent-chat.ts` — tryb chat: pętla narzędzi, odpowiedź przez `odpowiedz` (Zod), filtr strumienia, podpisana historia,
 - `lib/images.ts` — zasady dla zdjęć (formaty, 4 MB, walidacja),
 - `lib/auth.ts` — sesja, hasło, podpis odpowiedzi czatu,
 - `lib/analysis-run.ts`, `lib/analysis.ts` — analiza JSON, schemat, walidacja i budowanie odpowiedzi (wspólne z czatem),

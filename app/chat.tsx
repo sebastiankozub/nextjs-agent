@@ -7,7 +7,7 @@ import ChatPanel from "./chat-panel";
 // Wersje czatu. Każda ma własny endpoint; nowe wersje dopisujemy tutaj.
 const CHAT_VERSIONS = [
   // Czat ujednolicony: narzędzia + streaming postępu + odpowiedź po walidacji Zod.
-  { id: "chat", label: "Czat", api: "/api/chat" },
+  { id: "chat", label: "Czat", api: "/api/agent" },
 ] as const;
 
 type Mode = (typeof CHAT_VERSIONS)[number]["id"] | "analysis";

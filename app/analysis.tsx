@@ -102,10 +102,10 @@ export default function AnalysisPanel() {
     setAnalyzed("");
     setAnalyzedImage(image);
     try {
-      const res = await fetch("/api/analyze-image", {
+      const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image }),
+        body: JSON.stringify({ mode: "analyze", image }),
       });
       const body = await res.json().catch(() => null);
       if (body && typeof body === "object" && "ok" in body) {
@@ -132,10 +132,10 @@ export default function AnalysisPanel() {
     setAnalyzedImage(null);
     setAnalyzed(message);
     try {
-      const res = await fetch("/api/analyze", {
+      const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ mode: "analyze", message }),
       });
       let body: unknown;
       try {

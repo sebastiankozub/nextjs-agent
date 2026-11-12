@@ -1,3 +1,4 @@
+// PRZESTARZAŁE – zastąpione przez /api/agent (mode "analyze"). Do usunięcia po testach.
 import { getAuthConfig, isValidSessionToken, readSessionCookie } from "../../../lib/auth";
 import { analyzeDocumentImage } from "../../../lib/analyze-image-run";
 import { IMAGE_MAX_BYTES, IMAGE_TYPES } from "../../../lib/images";

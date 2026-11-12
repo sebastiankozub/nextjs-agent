@@ -1,3 +1,4 @@
+// PRZESTARZAŁE – zastąpione przez /api/agent (mode "analyze"). Do usunięcia po testach.
 import {
   getAuthConfig,
   isValidSessionToken,

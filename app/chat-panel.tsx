@@ -32,19 +32,41 @@ export default function ChatPanel({
       new DefaultChatTransport({
         api,
         // Wygenerowane obrazy są tylko do wyświetlenia – nie wysyłamy ich modelowi czatu.
+        // Serwer z odpowiedzi asystenta bierze tylko podpisany tekst – resztę (obrazy z narzędzi,
+        // źródła, wyniki narzędzi) wycinamy, żeby zapytanie nie rosło o kolejne megabajty.
         prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => ({
           body: {
+            mode: "chat",
             id,
             trigger,
             messageId,
-            messages: messages.filter((m) => !isGeneratedImageMessage(m)),
+            messages: messages
+              .filter((m) => !isGeneratedImageMessage(m))
+              .map((m) =>
+                m.role === "assistant"
+                  ? { ...m, parts: m.parts.filter((p) => p.type === "text") }
+                  : m,
+              ),
           },
         }),
       }),
   );
-  const { messages, sendMessage, setMessages, status, error } = useChat({ id, transport });
+  // Błędy przypięte do konkretnej wiadomości (id wiadomości użytkownika -> treść błędu).
+  const [messageErrors, setMessageErrors] = useState<Record<string, string>>({});
+  const messagesRef = useRef<UIMessage[]>([]);
+  const { messages, sendMessage, setMessages, status, clearError } = useChat({
+    id,
+    transport,
+    onError: (err) => {
+      // Błąd czatu dotyczy ostatniej wiadomości użytkownika – pokazujemy go pod nią, nie na dole.
+      const lastUser = [...messagesRef.current].reverse().find((m) => m.role === "user");
+      const text = err.message || "Coś poszło nie tak. Spróbuj ponownie.";
+      if (lastUser) setMessageErrors((prev) => ({ ...prev, [lastUser.id]: text }));
+      clearError();
+    },
+  });
+  messagesRef.current = messages;
   const [generating, setGenerating] = useState(false);
-  const [imageGenError, setImageGenError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -58,7 +80,6 @@ export default function ChatPanel({
   async function handleGenerate() {
     const prompt = input.trim();
     if (!prompt || busy) return;
-    setImageGenError(null);
     setGenerating(true);
     const userMessage: UIMessage = {
       id: crypto.randomUUID(),
@@ -98,7 +119,8 @@ export default function ChatPanel({
         },
       ]);
     } catch (err) {
-      setImageGenError(err instanceof Error ? err.message : "Nie udało się wygenerować obrazu.");
+      const text = err instanceof Error ? err.message : "Nie udało się wygenerować obrazu.";
+      setMessageErrors((prev) => ({ ...prev, [userMessage.id]: text }));
     } finally {
       setGenerating(false);
     }
@@ -153,6 +175,34 @@ export default function ChatPanel({
             <ToolLabels message={message} previous={messages[index - 1]} />
             {message.parts.map((part, i) => {
               if (part.type === "text") return <p key={i}>{part.text}</p>;
+              // Wynik narzędzia generujObraz (obraz w czacie, model dostał tylko krótki tekst).
+              if (part.type === "tool-generujObraz") {
+                if (part.state === "input-streaming" || part.state === "input-available") {
+                  return <p key={i} className="pending">Generuję obraz…</p>;
+                }
+                if (part.state === "output-error") {
+                  return <p key={i} className="error">Nie udało się wygenerować obrazu.</p>;
+                }
+                if (part.state === "output-available") {
+                  const out = part.output as { image?: string; modelId?: string | null; blad?: string };
+                  if (out.blad || !out.image) {
+                    return <p key={i} className="error">{out.blad ?? "Nie udało się wygenerować obrazu."}</p>;
+                  }
+                  const mediaType = /^data:([^;]+);/.exec(out.image)?.[1] ?? "image/png";
+                  const ext = mediaType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
+                  return (
+                    <div key={i}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img className="generated" src={out.image} alt="Wygenerowany obraz" />
+                      <a className="download" href={out.image} download={`studio-nova-obraz.${ext}`}>
+                        Pobierz
+                      </a>
+                      {out.modelId && <small className="model-used">model obrazu: {out.modelId}</small>}
+                    </div>
+                  );
+                }
+                return null;
+              }
               if (part.type === "file" && part.mediaType.startsWith("image/")) {
                 const generated = isGeneratedImageMessage(message);
                 return (
@@ -175,6 +225,11 @@ export default function ChatPanel({
             })}
             <Sources message={message} />
             <ModelUsed message={message} previous={messages[index - 1]} />
+            {messageErrors[message.id] && (
+              <p className="msg-error" role="alert">
+                ⚠️ {messageErrors[message.id]}
+              </p>
+            )}
           </div>
         ))}
 
@@ -183,21 +238,10 @@ export default function ChatPanel({
           <p className="pending">Analizuję…</p>
         )}
         {generating && <p className="pending">Generuję obraz…</p>}
-        {imageGenError && (
-          <p className="error" role="alert">
-            {imageGenError}
-          </p>
-        )}
-
-        {error && (
-          <p className="error" role="alert">
-            {error.message || "Coś poszło nie tak. Spróbuj ponownie."}
-          </p>
-        )}
       </section>
 
       {allowImages && (image || imageError) && (
-        <p className={imageError ? "error" : "hint"} role={imageError ? "alert" : undefined}>
+        <p className={imageError ? "msg-error" : "hint"} role={imageError ? "alert" : undefined}>
           {imageError ?? (
             <>
               📎 {image!.name}{" "}
@@ -332,6 +376,7 @@ function lastHasText(messages: UIMessage[]) {
 const TOOL_LABELS: Record<string, string> = {
   vision: "👁️ analiza zdjęcia",
   generowanieObrazu: "🎨 generowanie obrazu",
+  generujObraz: "🎨 generowanie obrazu",
   web_search: "🔎 wyszukiwanie",
   aktualnyCzas: "🕒 aktualnyCzas",
   pogoda: "🌤️ pogoda",
@@ -342,25 +387,37 @@ const TOOL_LABELS: Record<string, string> = {
 function ToolLabels({ message, previous }: { message: UIMessage; previous?: UIMessage }) {
   if (message.role !== "assistant") return null;
 
-  const used: string[] = [];
+  // Kolejność użycia narzędzi; kolejne wywołania tego samego narzędzia pod rząd liczymy (×2).
+  const used: { name: string; count: number }[] = [];
+  const push = (name: string) => {
+    const last = used[used.length - 1];
+    if (last?.name === name) last.count++;
+    else used.push({ name, count: 1 });
+  };
   // Obraz wygenerowany przyciskiem „Wygeneruj obraz”.
-  if (isGeneratedImageMessage(message)) used.push("generowanieObrazu");
+  if (isGeneratedImageMessage(message)) push("generowanieObrazu");
   // Odpowiedź na wiadomość ze zdjęciem (Vision).
-  else if (previous?.role === "user" && previous.parts.some((p) => p.type === "file")) used.push("vision");
+  else if (previous?.role === "user" && previous.parts.some((p) => p.type === "file")) push("vision");
+  let sawSearch = false;
   for (const part of message.parts) {
-    let name: string | null = null;
-    if (isToolUIPart(part)) name = getToolName(part);
-    // Wyszukiwanie OpenRoutera działa po stronie OpenRoutera — śladem są źródła.
-    else if (part.type === "source-url") name = "web_search";
-    if (name && !used.includes(name)) used.push(name);
+    if (isToolUIPart(part)) push(getToolName(part));
+    // Wyszukiwanie OpenRoutera działa po stronie OpenRoutera — śladem są źródła (jedna etykieta na blok źródeł).
+    else if (part.type === "source-url") {
+      if (!sawSearch || used[used.length - 1]?.name !== "web_search") push("web_search");
+      sawSearch = true;
+    }
   }
   if (used.length === 0) return null;
 
   return (
-    <div className="tool-labels">
-      {used.map((name) => (
-        <span key={name} className="tool-label">
-          {TOOL_LABELS[name] ?? `🛠 ${name}`}
+    <div className="tool-labels" aria-label="Użyte narzędzia po kolei">
+      {used.map(({ name, count }, i) => (
+        <span key={i} className="tool-step">
+          {i > 0 && <span className="tool-arrow">→</span>}
+          <span className="tool-label">
+            {TOOL_LABELS[name] ?? `🛠 ${name}`}
+            {count > 1 && ` ×${count}`}
+          </span>
         </span>
       ))}
     </div>

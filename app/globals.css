@@ -232,3 +232,18 @@ a.download {
   margin-top: 0.2rem;
   font-size: 0.85rem;
 }
+
+/* Błąd przypięty do wiadomości – mniejszy, pod wiadomością, której dotyczy. */
+.msg-error {
+  margin: 0.3rem 0 0;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+}
+
+.tool-labels { flex-wrap: wrap; align-items: center; }
+.tool-step { display: inline-flex; align-items: center; gap: 0.35rem; }
+.tool-arrow { font-size: 0.75rem; opacity: 0.5; }
