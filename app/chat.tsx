@@ -6,10 +6,10 @@ import ChatPanel from "./chat-panel";
 
 // Wersje czatu. Każda ma własny endpoint; nowe wersje dopisujemy tutaj.
 const CHAT_VERSIONS = [
-  { id: "chatL2W3", label: "baseW3", api: "/api/chatL2W3" },
+  { id: "chatL2W3", label: "Czat: L3", api: "/api/chatL2W3" },
   {
     id: "chatW3custom1.0",
-    label: "updated W3",
+    label: "Czat: L2W3 no stream",
     api: "/api/chatW3custom1.0",
   },
 ] as const;

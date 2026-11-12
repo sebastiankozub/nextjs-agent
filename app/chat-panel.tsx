@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useState, type FormEvent } from "react";
 
 // Jeden panel czatu = jeden endpoint (wersja czatu) i własna historia rozmowy.
@@ -31,9 +31,11 @@ export default function ChatPanel({ id, api }: { id: string; api: string }) {
             <span className="author">
               {message.role === "user" ? "Ty" : "Chatbot"}
             </span>
+            <ToolLabels message={message} />
             {message.parts.map((part, index) =>
               part.type === "text" ? <p key={index}>{part.text}</p> : null,
             )}
+            <Sources message={message} />
           </div>
         ))}
 
@@ -61,5 +63,67 @@ export default function ChatPanel({ id, api }: { id: string; api: string }) {
         </button>
       </form>
     </>
+  );
+}
+
+// Lista „Źródła” pod odpowiedzią (tylko gdy model użył wyszukiwania).
+function Sources({ message }: { message: UIMessage }) {
+  const sources = message.parts.filter((part) => part.type === "source-url");
+  if (message.role !== "assistant" || sources.length === 0) return null;
+
+  const meta = message.metadata as { fetchedAt?: string } | undefined;
+  const fetchedAt = meta?.fetchedAt ? new Date(meta.fetchedAt) : new Date();
+  const fetchedLabel = fetchedAt.toLocaleString("pl-PL", {
+    timeZone: "Europe/Warsaw",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  return (
+    <div className="sources">
+      <strong>Źródła</strong>
+      <ul>
+        {sources.map((part) => (
+          <li key={part.sourceId}>
+            <a href={part.url} target="_blank" rel="noopener noreferrer">
+              {part.title || new URL(part.url).hostname}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <small>pobrano: {fetchedLabel}</small>
+    </div>
+  );
+}
+
+// Etykiety użytych narzędzi nad odpowiedzią. Brak narzędzi = nic nie pokazujemy.
+const TOOL_LABELS: Record<string, string> = {
+  web_search: "🔎 wyszukiwanie",
+  aktualnyCzas: "🕒 aktualnyCzas",
+  pogoda: "🌤️ pogoda",
+  kursWaluty: "💱 kursWaluty",
+};
+
+function ToolLabels({ message }: { message: UIMessage }) {
+  if (message.role !== "assistant") return null;
+
+  const used: string[] = [];
+  for (const part of message.parts) {
+    let name: string | null = null;
+    if (isToolUIPart(part)) name = getToolName(part);
+    // Wyszukiwanie OpenRoutera działa po stronie OpenRoutera — śladem są źródła.
+    else if (part.type === "source-url") name = "web_search";
+    if (name && !used.includes(name)) used.push(name);
+  }
+  if (used.length === 0) return null;
+
+  return (
+    <div className="tool-labels">
+      {used.map((name) => (
+        <span key={name} className="tool-label">
+          {TOOL_LABELS[name] ?? `🛠 ${name}`}
+        </span>
+      ))}
+    </div>
   );
 }

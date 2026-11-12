@@ -3,11 +3,13 @@ import {
   APICallError,
   convertToModelMessages,
   createUIMessageStreamResponse,
+  isStepCount,
   streamText,
   toUIMessageStream,
   type UIMessage,
 } from "ai";
 import { getAuthConfig, isValidSessionToken, readSessionCookie } from "./auth";
+import { aktualnyCzas, kursWaluty, pogoda } from "./tools";
 
 function textError(message: string, status: number) {
   return new Response(message, {
@@ -95,11 +97,30 @@ export function createChatHandler(options: {
       // (allowSystemInMessages domyślnie = false).
       instructions: options.instructions,
       messages: await convertToModelMessages(messages),
+      // Narzędzie wyszukiwania z OpenRoutera (wykonuje się po stronie OpenRoutera).
+      tools: {
+        web_search: openrouter.tools.webSearch({
+          maxResults: 3,
+          engine: "native",
+        }),
+        // Nasza funkcja – data i godzina w Polsce.
+        aktualnyCzas,
+        // Publiczne API: Open-Meteo i NBP.
+        pogoda,
+        kursWaluty,
+      },
+      // Model może wykonać kilka kroków (np. wyszukaj -> odpowiedz).
+      stopWhen: isStepCount(5),
     });
 
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({
         stream: result.stream,
+        // Źródła z wyszukiwania trafiają do przeglądarki jako części "source-url".
+        sendSources: true,
+        // Moment pobrania odpowiedzi (czas serwera) – pokazywany jako „pobrano: …”.
+        messageMetadata: ({ part }) =>
+          part.type === "start" ? { fetchedAt: new Date().toISOString() } : undefined,
         onError: (error) => {
           console.error(`[${options.logTag}]`, error);
           return describeError(error);

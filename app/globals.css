@@ -136,3 +136,31 @@ body {
 
 .chat-header h1 { margin-bottom: 0; }
 .chat-header .model-id { margin: 2px 0 0; font-size: 12px; opacity: 0.6; font-family: monospace; }
+
+.sources {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.sources ul {
+  margin: 0.25rem 0;
+  padding-left: 1.2rem;
+}
+
+.sources a {
+  word-break: break-all;
+}
+
+.tool-labels {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0.3rem;
+}
+
+.tool-label {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.15);
+}
