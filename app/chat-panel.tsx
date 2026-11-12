@@ -102,6 +102,7 @@ const TOOL_LABELS: Record<string, string> = {
   aktualnyCzas: "🕒 aktualnyCzas",
   pogoda: "🌤️ pogoda",
   kursWaluty: "💱 kursWaluty",
+  kursKrypto: "🦎🪙 kursKrypto",
 };
 
 function ToolLabels({ message }: { message: UIMessage }) {

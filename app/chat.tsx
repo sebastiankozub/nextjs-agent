@@ -17,7 +17,7 @@ const CHAT_VERSIONS = [
 type Mode = (typeof CHAT_VERSIONS)[number]["id"] | "analysis";
 
 export default function Chat({ modelId }: { modelId: string | null }) {
-  const [mode, setMode] = useState<Mode>("chatW3custom1.0");
+  const [mode, setMode] = useState<Mode>("chatL2W3");
 
   return (
     <main className="chat">

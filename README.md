@@ -119,6 +119,7 @@ Nad odpowiedzią czat pokazuje etykiety użytych narzędzi, pod odpowiedzią —
 | 🕒 aktualnyCzas | `aktualnyCzas` — data, dzień tygodnia, godzina (Europe/Warsaw) | zegar serwera |
 | 🌤️ pogoda | `pogoda` — miasto, opcjonalnie data i godzina | Open-Meteo (geocoding + forecast) |
 | 💱 kursWaluty | `kursWaluty` — kod lub polska nazwa waluty → kurs średni vs PLN | NBP (tabele A i B) |
+| 🦎🪙 kursKrypto | `kursKrypto` — symbol, nazwa lub id kryptowaluty → cena w PLN i USD, zmiana 24 h | CoinGecko (publiczne API bez klucza; opcjonalnie `COINGECKO_DEMO_API_KEY`) |
 
 Narzędzia z publicznym API zwracają tylko potrzebne pola oraz `zrodlo` i `pobrano`.
 Gdy API nie odpowiada (limit 8 s) albo zwraca błąd — zwracają czytelny komunikat `blad`

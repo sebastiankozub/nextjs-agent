@@ -9,7 +9,7 @@ import {
   type UIMessage,
 } from "ai";
 import { getAuthConfig, isValidSessionToken, readSessionCookie } from "./auth";
-import { aktualnyCzas, kursWaluty, pogoda } from "./tools";
+import { aktualnyCzas, kursKrypto, kursWaluty, pogoda } from "./tools";
 
 function textError(message: string, status: number) {
   return new Response(message, {
@@ -105,9 +105,10 @@ export function createChatHandler(options: {
         }),
         // Nasza funkcja – data i godzina w Polsce.
         aktualnyCzas,
-        // Publiczne API: Open-Meteo i NBP.
+        // Publiczne API: Open-Meteo, NBP i CoinGecko.
         pogoda,
         kursWaluty,
+        kursKrypto,
       },
       // Model może wykonać kilka kroków (np. wyszukaj -> odpowiedz).
       stopWhen: isStepCount(5),

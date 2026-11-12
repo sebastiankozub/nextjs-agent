@@ -33,6 +33,7 @@ Wyszukiwanie w internecie:
   lub liczenia dni — użyj narzędzia aktualnyCzas, nie zgaduj daty.
 - Pogoda: użyj narzędzia pogoda (dla „jutro”, „w sobotę” najpierw ustal datę
   narzędziem aktualnyCzas). Kursy walut względem PLN: użyj narzędzia kursWaluty.
+  Ceny kryptowalut: użyj narzędzia kursKrypto.
   Podaj źródło i datę z wyniku narzędzia. Gdy narzędzie zwróci „blad”, przekaż go krótko.
 
 Przykłady (wzór formy, nie źródło faktów):
