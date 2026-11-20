@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import AnalysisPanel from "./analysis";
 import ChatPanel from "./chat-panel";
@@ -31,6 +32,9 @@ export default function Chat({ modelId }: { modelId: string | null }) {
           </div>
         </div>
         <div className="header-actions">
+          <Link href="/dashboard" className="nav-link">
+            ✈ Asystent podróży
+          </Link>
           <ThemePicker />
           <form action="/api/logout" method="post">
             <button type="submit" className="logout">

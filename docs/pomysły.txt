@@ -1,3 +1,5 @@
 pomysły priv - nie do kursu:
 
 1. kopiowanie z enter /n do okienka wiadomosci
+
+2. Anonimizowac backend - sample: "Open-Meteo nie ma prognozy dla tej daty (prognoza sięga maks. 15 dni naprzód). źródło: Open-Meteo (open-meteo.com) "

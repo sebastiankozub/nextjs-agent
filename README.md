@@ -133,6 +133,15 @@ paragonu). Ostateczne `needs_review` składa serwer: nagłówek, czytelność, p
 **Nowy typ dokumentu** = nowy wpis w `DOCUMENT_TYPES` w `lib/documents.ts` (etykieta, kiedy go wybrać,
 pola, schemat body, instrukcja, opcjonalne kontrole). Endpoint i panel nie wymagają zmian.
 
+## Asystent podróży – `/dashboard` (lekcja 4, warsztat 3)
+
+Podstrona tylko po zalogowaniu (bez sesji – przekierowanie na logowanie); link „✈ Asystent podróży” w nagłówku czatu i „← Czat” z powrotem.
+
+- **Jedno miasto:** „Dokąd jedziesz?” + „Kiedy?” → pięć kart: Pogoda (`pogoda`), Waluty (`waluty`, NBP), Święta (`swieta`, 3 najbliższe od dnia wyjazdu), Wikipedia (2 zdania + link), Czas (`strefaCzasowa`). Karty używają **tych samych funkcji co narzędzia agenta** (`lib/travel-sources.ts` woła ich `execute`, bez modelu). Każda karta: wartość z jednostką, źródło, godzina pobrania; „Odśwież” pobiera ponownie.
+- **Porównaj:** dwa miasta, ten sam termin → karty obu miast obok siebie (wiersz na źródło) i rekomendacja agenta: `polecam` to enum z dwóch nazw (`Output.object`), uzasadnienie z wartościami z kart.
+- **Uodpornienia:** każda karta to osobne zapytanie `GET /api/dashboard?zrodlo=…` z limitem 15 s – awaria jednego źródła nie psuje pozostałych. Stany: „Ładuję…”, „OK”, „Brak danych — spróbuj odświeżyć” (z powodem). **Nigdy danych zastępczych** – waluta kraju z tabeli ISO (`lib/travel.ts`), a gdy kraju nie ma w tabeli – „Brak danych”.
+- **Podsumowanie** (`POST /api/dashboard/summary`, 2–3 zdania: co spakować, na co uważać) i **rekomendacja** (`POST /api/dashboard/compare`) – dopiero gdy wszystkie karty skończą, tylko z kart OK. Serwer pilnuje, żeby tekst mówił wprost, którego źródła zabrakło (`ensureMissingMentioned`); bez żadnych danych model nie jest wołany.
+
 ## Struktura
 
 - `app/chat.tsx` — przyciski Czat / Analiza wiadomości,

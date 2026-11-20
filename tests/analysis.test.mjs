@@ -16,6 +16,9 @@ import {
   buildPartialReply,
   buildLimitHeader,
   summarizeFailures,
+  partialFromParts,
+  markInterrupted,
+  INTERRUPTED_NOTE,
 } from "../lib/analysis.ts";
 import {
   ANALYSIS_INSTRUCTIONS,
@@ -332,8 +335,10 @@ test("W2: limity – wartości domyślne, gdy brak zmiennych", () => {
     maxSteps: 6,
     maxToolCalls: 16,
     maxTaskMs: 60_000,
-    toolTimeoutMs: 10_000,
+    toolTimeoutMs: 6_000,
     slowToolTimeoutMs: 40_000,
+    toolRetries: 1,
+    nbpCacheMs: 3_600_000,
   });
 });
 
@@ -344,8 +349,18 @@ test("W2: limity – poprawne wartości z env są brane", () => {
     AGENT_MAX_TASK_SECONDS: "30",
     AGENT_TOOL_TIMEOUT_SECONDS: "3",
     AGENT_SLOW_TOOL_TIMEOUT_SECONDS: "20",
+    AGENT_TOOL_RETRIES: "0",
+    AGENT_NBP_CACHE_MINUTES: "0",
   });
-  assert.deepEqual(l, { maxSteps: 2, maxToolCalls: 5, maxTaskMs: 30_000, toolTimeoutMs: 3_000, slowToolTimeoutMs: 20_000 });
+  assert.deepEqual(l, {
+    maxSteps: 2,
+    maxToolCalls: 5,
+    maxTaskMs: 30_000,
+    toolTimeoutMs: 3_000,
+    slowToolTimeoutMs: 20_000,
+    toolRetries: 0,
+    nbpCacheMs: 0,
+  });
 });
 
 test("W2: limity – zła, pusta albo poza zakresem wartość = domyślna", () => {
@@ -393,4 +408,141 @@ test("W2: instrukcje – zakaz wymówki „nie mam możliwości” i reguła ost
   assert.match(CHAT_AGENT_INSTRUCTIONS, /niedokonczone/);
   assert.match(LAST_STEP_RULE, /OSTATNI krok/);
   assert.match(LAST_STEP_RULE, /zabrakło kroków, nie możliwości/);
+});
+
+// --- „Stop”: wynik częściowy po przerwaniu przez użytkownika ---
+
+const assistantParts = (parts) => ({ id: "a1", role: "assistant", parts });
+
+test("Stop: wyniki narzędzi z numerem kroku, narzędzie w trakcie oznaczone", () => {
+  const msg = assistantParts([
+    { type: "step-start" },
+    { type: "tool-waluty", toolCallId: "1", state: "output-available", input: {}, output: { kod: "EUR", kurs: 4.25 } },
+    { type: "step-start" },
+    { type: "tool-generujObraz", toolCallId: "2", state: "output-available", input: {}, output: { image: "data:image/png;base64,AAAA" } },
+    { type: "tool-pogoda", toolCallId: "3", state: "input-available", input: { miasto: "Poznań" } },
+  ]);
+  assert.deepEqual(partialFromParts(msg), [
+    "1. waluty: kod: EUR, kurs: 4.25",
+    "2. generujObraz: obraz wygenerowany (powyżej)",
+    "2. pogoda: przerwane w trakcie",
+  ]);
+});
+
+test("Stop: do odpowiedzi bez tekstu dopisuje wynik częściowy i „Przerwane przez użytkownika”", () => {
+  const before = [user("Kurs euro i wykres"), assistantParts([
+    { type: "step-start" },
+    { type: "tool-waluty", toolCallId: "1", state: "output-available", input: {}, output: { kod: "EUR", kurs: 4.25 } },
+  ])];
+  const after = markInterrupted(before);
+  assert.equal(after.length, 2);
+  const text = after[1].parts.at(-1).text;
+  assert.match(text, /^Przerwane przez użytkownika\. Do tej pory zrobiłem:\n1\. waluty: kod: EUR/);
+  assert.equal(after[1].metadata.interrupted, true);
+  assert.equal(after[1].parts.length, 3); // obrazy, etykiety i źródła zostają
+});
+
+test("Stop: agent nic nie wysłał → nowa wiadomość z samą informacją", () => {
+  const after = markInterrupted([user("Hej")]);
+  assert.equal(after.length, 2);
+  assert.equal(after[1].role, "assistant");
+  assert.equal(after[1].parts[0].text, INTERRUPTED_NOTE);
+});
+
+test("Stop: pełna odpowiedź już przyszła → nic nie dopisujemy", () => {
+  const before = [user("Hej"), assistantParts([{ type: "text", text: "Dzień dobry!" }])];
+  assert.equal(markInterrupted(before), before);
+});
+
+// --- Asystent podróży (/dashboard): logika kart i podsumowania ---
+
+import {
+  CURRENCY_BY_COUNTRY,
+  firstSentences,
+  upcomingHolidays,
+  isValidDate,
+  ensureMissingMentioned,
+  noDataSummary,
+} from "../lib/travel.ts";
+
+test("podróże: waluta kraju – strefa euro, Polska, brak kraju = brak danych (bez zgadywania)", () => {
+  assert.equal(CURRENCY_BY_COUNTRY.PT, "EUR");
+  assert.equal(CURRENCY_BY_COUNTRY.GB, "GBP");
+  assert.equal(CURRENCY_BY_COUNTRY.PL, "PLN");
+  assert.equal(CURRENCY_BY_COUNTRY.XX, undefined);
+});
+
+test("podróże: Wikipedia – dokładnie dwa pierwsze zdania, skróty w środku zdania nie tną", () => {
+  const t = "Lizbona – stolica Portugalii, ok. 545 tys. mieszkańców. Leży nad Tagiem. Trzecie zdanie.";
+  assert.equal(firstSentences(t, 2), "Lizbona – stolica Portugalii, ok. 545 tys. mieszkańców. Leży nad Tagiem.");
+  assert.equal(firstSentences("Jedno zdanie bez kropki …", 2), "Jedno zdanie bez kropki");
+});
+
+test("podróże: najbliższe święta od dnia podróży (włącznie), posortowane, max 3", () => {
+  const lista = [{ data: "2026-12-25" }, { data: "2026-12-08" }, { data: "2026-11-01" }, { data: "2027-01-01" }, { data: "2026-12-01" }];
+  assert.deepEqual(upcomingHolidays(lista, "2026-12-01").map((s) => s.data), ["2026-12-01", "2026-12-08", "2026-12-25"]);
+  assert.deepEqual(upcomingHolidays(lista, "2027-02-01"), []);
+});
+
+test("podróże: data musi być prawdziwa (RRRR-MM-DD, bez 31 lutego)", () => {
+  assert.equal(isValidDate("2026-12-01"), true);
+  assert.equal(isValidDate("2026-02-31"), false);
+  assert.equal(isValidDate("01.12.2026"), false);
+});
+
+test("podróże: podsumowanie mówi wprost, którego źródła zabrakło – serwer dopisuje, gdy model pominął", () => {
+  const tekst = "Spakuj kurtkę przeciwdeszczową.";
+  assert.equal(
+    ensureMissingMentioned(tekst, ["waluty", "czas"]),
+    "Spakuj kurtkę przeciwdeszczową. Zabrakło danych ze źródeł: Waluty, Czas – spróbuj odświeżyć.",
+  );
+  // Model już wspomniał (z odmianą) – nic nie dopisujemy.
+  const wspomnial = "Nie udało się pobrać kursu waluty ani prognozy pogody.";
+  assert.equal(ensureMissingMentioned(wspomnial, ["waluty", "pogoda"]), wspomnial);
+  assert.equal(ensureMissingMentioned(tekst, []), tekst);
+});
+
+test("podróże: brak wszystkich źródeł – podsumowanie bez modelu, wymienia wszystkie źródła", () => {
+  const t = noDataSummary();
+  for (const nazwa of ["Pogoda", "Waluty", "Święta", "Wikipedia", "Czas"]) assert.match(t, new RegExp(nazwa));
+});
+
+test("podróże: Wikipedia – „r.” przed wielką literą nie kończy zdania", () => {
+  const t = "Miasto założono w 1200 r. Nazwa pochodzi od rzeki. Trzecie.";
+  assert.equal(firstSentences(t, 1), "Miasto założono w 1200 r. Nazwa pochodzi od rzeki.");
+});
+
+test("strażnik narzędzi: czat NIE podmienia execute we wspólnych obiektach narzędzi", async () => {
+  const fs = await import("node:fs");
+  const src = fs.readFileSync(new URL("../lib/agent-chat.ts", import.meta.url), "utf8");
+  // Regresja: „withExecute.execute = guard(…)” przyklejało strażnika do lib/tools.ts na stałe.
+  assert.doesNotMatch(src, /\.execute\s*=\s*guard\(/);
+  assert.match(src, /\{ \.\.\.t, execute: guard\(name, execute\) \}/);
+});
+
+// --- Asystent podróży: tryb „Porównaj” ---
+
+import { ensureCompareMissingMentioned, noDataCompareSummary, formatRecommendation } from "../lib/travel.ts";
+
+test("porównaj: rekomendacja zaczyna się od „Polecam: <miasto>.”", () => {
+  assert.equal(formatRecommendation("Porto", " Cieplej o 3 °C. "), "Polecam: Porto. Cieplej o 3 °C.");
+});
+
+test("porównaj: brak danych dla konkretnego miasta – serwer dopisuje „miasto – źródła”", () => {
+  const t = ensureCompareMissingMentioned("Polecam: Porto. Cieplej o 3 °C.", [
+    { miasto: "Porto", missing: [] },
+    { miasto: "Lizbona", missing: ["waluty", "swieta"] },
+  ]);
+  assert.equal(t, "Polecam: Porto. Cieplej o 3 °C. Zabrakło danych: Lizbona – Waluty, Święta – spróbuj odświeżyć.");
+});
+
+test("porównaj: model już napisał o braku – nic nie dopisujemy", () => {
+  const t = "Polecam: Porto. Dla Lizbony zabrakło prognozy pogody, więc porównanie jest niepełne.";
+  assert.equal(ensureCompareMissingMentioned(t, [{ miasto: "Lizbona", missing: ["pogoda"] }]), t);
+});
+
+test("porównaj: brak wszystkich danych dla obu miast – bez modelu, bez polecania", () => {
+  const t = noDataCompareSummary("Lizbona", "Porto");
+  assert.match(t, /Nie mogę polecić ani Lizbona, ani Porto/);
+  assert.doesNotMatch(t, /Polecam/);
 });

@@ -1055,3 +1055,85 @@ a.download {
   font-family: var(--font-mono);
   white-space: normal;
 }
+
+/* Przycisk „Stop” – widoczny tylko podczas pracy agenta (zamiast „Wyślij”). */
+button.stop {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+button.stop:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--danger-bg);
+}
+
+/* --- Asystent podróży (/dashboard) + link w nagłówku czatu (lekcja 4, W3) --- */
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--accent-text);
+  font-size: 0.88rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav-link:hover { background: var(--accent-soft); }
+
+.travel { max-width: 1040px; }
+.travel-form { flex-wrap: wrap; align-items: flex-end; }
+.travel-form label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; min-width: 0; font-size: 0.82rem; color: var(--muted); }
+/* W kolumnie flex dziedziczone z czatu „flex: 1 1 200px” rozciągało pola na wysokość. */
+.travel-form label input { flex: none; width: 100%; min-height: 44px; }
+.travel-form button { flex: none; }
+.travel-query { margin: 8px 0 0; }
+
+.travel-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+.travel-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.travel-card.missing { border-color: var(--danger-border); background: var(--danger-bg); }
+.travel-card header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.travel-card h3 { margin: 0; font-size: 1rem; }
+.card-status { font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
+.card-status.ok { color: var(--accent-text); background: var(--accent-soft); }
+.card-status.loading { color: var(--muted); }
+.card-status.missing { color: var(--danger); border-color: var(--danger-border); }
+.card-value { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.card-detail { margin: 0; font-size: 0.88rem; }
+.card-missing { margin: 0; color: var(--danger); font-weight: 600; }
+.card-meta { margin-top: auto; padding-top: 6px; font-size: 0.72rem; color: var(--muted); font-family: var(--font-mono); }
+
+.travel-summary {
+  margin-bottom: 32px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.travel-summary h2 { margin: 0 0 6px; font-size: 1rem; }
+.travel-summary p { margin: 0 0 4px; }
+
+/* --- Asystent podróży: tryb „Porównaj” – dwa miasta obok siebie, wiersz na źródło --- */
+.travel-compare { display: flex; flex-direction: column; gap: 14px; margin: 14px 0; }
+.compare-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.compare-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.15rem; }
+.compare-head h2.recommended { color: var(--accent-text); }
+.travel-compare .travel-query { margin: 0; }
+@media (max-width: 640px) {
+  .compare-row { grid-template-columns: 1fr; }
+}
