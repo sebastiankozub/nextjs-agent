@@ -164,8 +164,6 @@ export default function ChatPanel({
 
   return (
     <>
-      <p className="hint">Endpoint: {api}</p>
-
       <section className="messages" aria-label="Rozmowa" aria-live="polite">
         {messages.map((message, index) => (
           <div key={message.id} className={`message ${message.role}`}>
@@ -233,13 +231,14 @@ export default function ChatPanel({
           </div>
         ))}
 
-        {status === "submitted" && <p className="pending">Chatbot myśli…</p>}
+        {status === "submitted" && <p className="pending typing">Agent pisze</p>}
         {status === "streaming" && !lastHasText(messages) && (
-          <p className="pending">Analizuję…</p>
+          <p className="pending typing">Agent pracuje</p>
         )}
-        {generating && <p className="pending">Generuję obraz…</p>}
+        {generating && <p className="pending typing">Generuję obraz</p>}
       </section>
 
+      <div className="composer-bar">
       {allowImages && (image || imageError) && (
         <p className={imageError ? "msg-error" : "hint"} role={imageError ? "alert" : undefined}>
           {imageError ?? (
@@ -302,19 +301,25 @@ export default function ChatPanel({
         <div className="image-hints" aria-label="Podpowiedzi opisów obrazu">
           <span>Pomysły na obraz:</span>
           {IMAGE_PROMPT_HINTS.map((hint) => (
+            // Po najechaniu / fokusie chip rozwija się ku górze i pokazuje cały prompt.
             <button
               key={hint}
               type="button"
               className="hint-chip"
               onClick={() => setInput(hint)}
               disabled={busy}
-              title={hint}
+              aria-label={`Wstaw opis obrazu: ${hint}`}
             >
-              {hint.split(":")[0]}
+              <span className="chip-short">{hint.split(":")[0]}</span>
+              <span className="chip-full" aria-hidden="true">
+                <strong>{hint.split(":")[0]}:</strong>
+                {hint.slice(hint.indexOf(":") + 1)}
+              </span>
             </button>
           ))}
         </div>
       )}
+      </div>
     </>
   );
 }

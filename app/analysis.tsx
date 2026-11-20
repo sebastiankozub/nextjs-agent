@@ -187,7 +187,7 @@ export default function AnalysisPanel() {
           </div>
         )}
 
-        {busy && <p className="pending">Analizuję…</p>}
+        {busy && <p className="pending typing">Analizuję</p>}
 
         {docOutcome?.ok === true && <DocumentResult result={docOutcome.result} />}
 
@@ -239,6 +239,7 @@ export default function AnalysisPanel() {
         )}
       </section>
 
+      <div className="composer-bar">
       {(imageName || imageError) && (
         <p className={imageError ? "error" : "hint"} role={imageError ? "alert" : undefined}>
           {imageError ?? (
@@ -275,6 +276,7 @@ export default function AnalysisPanel() {
           {busy ? "Czekaj…" : "Analizuj"}
         </button>
       </form>
+      </div>
     </>
   );
 }

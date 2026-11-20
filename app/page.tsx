@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, getAuthConfig, isValidSessionToken } from "../lib/auth";
 import Chat from "./chat";
+import ThemePicker from "./theme-picker";
 import { showErrorDetails } from "../lib/openrouter-config";
 
 const ERRORS: Record<string, string> = {
@@ -27,7 +28,17 @@ export default async function Home({
 
   return (
     <main className="login">
-      <h1>Wpisz hasło</h1>
+      <div className="login-card">
+      <div className="login-top">
+        <ThemePicker />
+      </div>
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true">✦</span>
+        <div>
+          <h1>Studio Nova</h1>
+          <p className="tagline">Asystent obsługi klientów. Wpisz hasło, aby wejść.</p>
+        </div>
+      </div>
       {!config ? (
         <p className="error" role="alert">
           {showErrorDetails()
@@ -52,6 +63,7 @@ export default async function Home({
           {error}
         </p>
       )}
+      </div>
     </main>
   );
 }

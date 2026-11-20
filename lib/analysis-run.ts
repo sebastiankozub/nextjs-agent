@@ -68,8 +68,12 @@ export async function runAnalysis(options: {
   const openrouter = createOpenRouter({ apiKey: options.apiKey });
   // require_parameters: OpenRouter kieruje zapytanie tylko do dostawców,
   // którzy obsługują response_format — inaczej zwraca błąd zamiast go ignorować.
+  // reasoning „low”: Gemini wlicza ukryte rozumowanie do maxOutputTokens – przy nietypowej
+  // wiadomości potrafiło zjeść cały limit i analiza kończyła się „ucięta (limit długości)”.
+  // Do wypełnienia czterech pól schematu krótkie rozumowanie wystarcza.
   const model = openrouter.chat(options.modelId, {
     provider: { require_parameters: true },
+    reasoning: { effort: "low", exclude: true },
   });
 
   try {
@@ -83,7 +87,7 @@ export async function runAnalysis(options: {
         description: "Analiza wiadomości klienta Studio Nova",
         schema: analysisSchema,
       }),
-      maxOutputTokens: 800,
+      maxOutputTokens: 2000,
     });
 
     // Własna walidacja na serwerze — niezależnie od tego, co sprawdził SDK.

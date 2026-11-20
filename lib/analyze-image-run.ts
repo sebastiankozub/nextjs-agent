@@ -126,7 +126,11 @@ export async function analyzeDocumentImage(options: {
   logTag: string;
 }): Promise<({ ok: true; result: DocumentAnalysis; status: 200 }) | StepFail> {
   const openrouter = createOpenRouter({ apiKey: options.apiKey });
-  const model = openrouter.chat(options.modelId, { provider: { require_parameters: true } });
+  // reasoning „low” – jak w analysis-run.ts: rozumowanie nie może zjeść limitu na JSON.
+  const model = openrouter.chat(options.modelId, {
+    provider: { require_parameters: true },
+    reasoning: { effort: "low", exclude: true },
+  });
   const common = { model, image: options.image, mediaType: options.mediaType, logTag: options.logTag };
 
   // Krok 1: nagłówek.
