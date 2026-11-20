@@ -9,6 +9,7 @@ import {
 import type { z } from "zod";
 import { describeIssue } from "./analysis";
 import { describeProviderError } from "./analysis-run";
+import { publicMessage } from "./openrouter-config";
 import {
   bodyStepSchema,
   DOCUMENT_TYPES,
@@ -95,7 +96,7 @@ async function runStep<T>(options: {
         return {
           ok: false,
           kind: "unsupported",
-          message: "Ustawiony model (OPENROUTER_MODEL) nie obsługuje zdjęć. Wybierz model z Vision.",
+          message: publicMessage("Ustawiony model (OPENROUTER_MODEL) nie obsługuje zdjęć. Wybierz model z Vision.", "NO_VISION"),
           status: 422,
         };
       }

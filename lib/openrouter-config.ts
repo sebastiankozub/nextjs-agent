@@ -2,6 +2,23 @@ import { APICallError } from "ai";
 
 // Wspólna konfiguracja OpenRouter i komunikaty błędów dostawcy (czat, analiza, obrazy).
 // Wartości kluczy NIGDY nie trafiają do komunikatów ani logów – tylko wskazówki co do formatu.
+//
+// Szczegóły (nazwy zmiennych, pliki konfiguracji, kody HTTP, odpowiedź dostawcy) widzi użytkownik
+// TYLKO w trybie deweloperskim (npm run dev) albo przy SHOW_ERROR_DETAILS=true.
+// Na produkcji użytkownik dostaje ogólny komunikat z kodem i numerem zgłoszenia,
+// a pełny opis trafia do logów serwera (na Vercelu: zakładka Logs) pod tym samym numerem.
+
+export function showErrorDetails(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.SHOW_ERROR_DETAILS === "true";
+}
+
+/** Komunikat dla użytkownika: szczegóły w dev, ogólny z kodem i numerem zgłoszenia na produkcji. */
+export function publicMessage(detail: string, code: string, generic = "Usługa jest chwilowo niedostępna. Spróbuj ponownie później."): string {
+  if (showErrorDetails()) return detail;
+  const ref = Math.random().toString(36).slice(2, 8).toUpperCase();
+  console.error(`[błąd ${code} ref ${ref}] ${detail}`);
+  return `${generic} (kod: ${code}, zgłoszenie: ${ref})`;
+}
 
 const WHERE =
   "lokalnie: plik .env.local i restart serwera; na Vercelu: Settings → Environment Variables (środowisko Production) i ponowne wdrożenie";
@@ -26,7 +43,10 @@ export function getOpenRouterConfig(): OpenRouterConfig {
   else if (rawModel !== rawModel.trim()) problems.push("OPENROUTER_MODEL ma spacje na początku/końcu");
 
   if (problems.length > 0) {
-    return { ok: false, message: `Błąd konfiguracji: ${problems.join("; ")}. Popraw (${WHERE}).` };
+    return {
+      ok: false,
+      message: publicMessage(`Błąd konfiguracji: ${problems.join("; ")}. Popraw (${WHERE}).`, "CONFIG"),
+    };
   }
   return { ok: true, apiKey: rawKey.trim(), modelId: rawModel.trim() };
 }
@@ -56,25 +76,32 @@ export function describeProviderError(
   model: string,
   modelVar = "OPENROUTER_MODEL",
 ): string {
+  const [detailMessage, code] = describeDetailed(error, what, model, modelVar);
+  // Limit zapytań to informacja przydatna dla użytkownika – bez szczegółów technicznych.
+  if (code === "RATE_LIMIT") return "Za dużo zapytań. Odczekaj chwilę i spróbuj ponownie.";
+  return publicMessage(detailMessage, code);
+}
+
+function describeDetailed(error: unknown, what: string, model: string, modelVar: string): [string, string] {
   if (APICallError.isInstance(error)) {
     const detail = providerDetail(error);
     switch (error.statusCode) {
       case 401:
-        return `OpenRouter odrzucił klucz API (${what}, HTTP 401).${detail} Sprawdź OPENROUTER_API_KEY (${WHERE}).`;
+        return [`OpenRouter odrzucił klucz API (${what}, HTTP 401).${detail} Sprawdź OPENROUTER_API_KEY (${WHERE}).`, "AUTH"];
       case 402:
-        return `Brak środków na koncie OpenRouter dla modelu ${model} (${what}, HTTP 402).${detail}`;
+        return [`Brak środków na koncie OpenRouter dla modelu ${model} (${what}, HTTP 402).${detail}`, "CREDITS"];
       case 403:
-        return `Brak dostępu do modelu ${model} (${what}, HTTP 403).${detail} Sprawdź ${modelVar} albo uprawnienia klucza.`;
+        return [`Brak dostępu do modelu ${model} (${what}, HTTP 403).${detail} Sprawdź ${modelVar} albo uprawnienia klucza.`, "FORBIDDEN"];
       case 404:
         if (/image/i.test(error.message)) {
-          return `Model ${model} nie obsługuje zdjęć (${what}). Ustaw w ${modelVar} model z Vision, np. google/gemini-3.8-flash.`;
+          return [`Model ${model} nie obsługuje zdjęć (${what}). Ustaw w ${modelVar} model z Vision, np. google/gemini-3.8-flash.`, "NO_VISION"];
         }
-        return `OpenRouter nie zna modelu ${model} albo żaden dostawca go nie obsługuje (${what}, HTTP 404).${detail} Sprawdź ${modelVar}.`;
+        return [`OpenRouter nie zna modelu ${model} albo żaden dostawca go nie obsługuje (${what}, HTTP 404).${detail} Sprawdź ${modelVar}.`, "MODEL"];
       case 429:
-        return `Za dużo zapytań do OpenRouter (${what}, HTTP 429). Odczekaj chwilę i spróbuj ponownie.`;
+        return [`Za dużo zapytań do OpenRouter (${what}, HTTP 429).`, "RATE_LIMIT"];
       default:
-        return `Błąd dostawcy modelu ${model} (${what}, HTTP ${error.statusCode ?? "?"}).${detail}`;
+        return [`Błąd dostawcy modelu ${model} (${what}, HTTP ${error.statusCode ?? "?"}).${detail}`, "PROVIDER"];
     }
   }
-  return `Nie udało się wykonać: ${what}. Szczegóły są w logach serwera.`;
+  return [`Nie udało się wykonać: ${what}. ${error instanceof Error ? error.message : ""}`.trim(), "UNKNOWN"];
 }

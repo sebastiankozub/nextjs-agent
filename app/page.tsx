@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, getAuthConfig, isValidSessionToken } from "../lib/auth";
 import Chat from "./chat";
+import { showErrorDetails } from "../lib/openrouter-config";
 
 const ERRORS: Record<string, string> = {
   haslo: "Nieprawidłowe hasło.",
@@ -29,8 +30,9 @@ export default async function Home({
       <h1>Wpisz hasło</h1>
       {!config ? (
         <p className="error" role="alert">
-          Brak konfiguracji: ustaw CHAT_PASSWORD i SESSION_SECRET (min. 32
-          znaki) w .env.local, a potem uruchom ponownie serwer.
+          {showErrorDetails()
+            ? "Brak konfiguracji: ustaw CHAT_PASSWORD i SESSION_SECRET (min. 32 znaki) w .env.local, a potem uruchom ponownie serwer."
+            : "Aplikacja nie jest jeszcze skonfigurowana. Spróbuj później."}
         </p>
       ) : (
         <form className="composer" action="/api/login" method="post">

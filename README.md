@@ -26,7 +26,13 @@ Oba tryby korzystają z tego samego schematu (`analysisSchema`), walidacji (`val
 i budowania odpowiedzi (`buildChatReply`). Przycisk „Wygeneruj obraz” (`/api/image`) i narzędzie czatu
 `generujObraz` używają wspólnej funkcji `lib/image-gen.ts`.
 
-Endpointy `/api/chat`, `/api/analyze`, `/api/analyze-image` są przestarzałe (do usunięcia po testach `/api/agent`).
+Stare endpointy `/api/chat`, `/api/analyze`, `/api/analyze-image` zostały usunięte – wszystko idzie przez `/api/agent`.
+
+**Komunikaty błędów:** w trybie deweloperskim (`npm run dev`) użytkownik widzi szczegóły (nazwy zmiennych, kod HTTP,
+odpowiedź OpenRouter). Na produkcji – ogólny komunikat z kodem i numerem zgłoszenia, np.
+„Usługa jest chwilowo niedostępna… (kod: AUTH, zgłoszenie: K3P9QX)”; pełny opis jest w logach serwera
+(na Vercelu: Logs) pod tym numerem. Szczegóły na produkcji można tymczasowo włączyć zmienną `SHOW_ERROR_DETAILS=true`.
+`lib/openrouter-config.ts`.
 
 Do lekcji 3 były dwa osobne czaty: **baseW3** (streaming + narzędzia, bez walidacji odpowiedzi)
 i **L2W3 no stream** (analiza JSON + walidacja, bez narzędzi). Teraz to jeden czat, który łączy oba podejścia.

@@ -7,7 +7,7 @@ import {
   Output,
 } from "ai";
 import { analysisSchema, interpretModelOutput, type AnalysisOutcome } from "./analysis";
-import { describeProviderError as providerMessage } from "./openrouter-config";
+import { describeProviderError as providerMessage, publicMessage } from "./openrouter-config";
 
 // Wspólne wywołanie modelu dla analizy wiadomości. Używają go:
 // - /api/analyze (panel „Analiza wiadomości”).
@@ -32,9 +32,11 @@ export function describeProviderError(error: APICallError, modelId = "OPENROUTER
   ) {
     return fail(
       "unsupported",
-      "Ustawiony model (OPENROUTER_MODEL) nie obsługuje structured output (response_format / json_schema) u żadnego dostawcy w OpenRouter. " +
-        "Wybierz w .env.local model, który na openrouter.ai ma w 'Supported parameters' pozycję structured_outputs, i uruchom ponownie serwer. " +
-        "Zwykły czat działa dalej bez zmian.",
+      publicMessage(
+        `Model ${modelId} (OPENROUTER_MODEL) nie obsługuje structured output (response_format / json_schema) u żadnego dostawcy w OpenRouter. ` +
+          "Wybierz model, który na openrouter.ai ma w 'Supported parameters' pozycję structured_outputs (lokalnie .env.local, na Vercelu Environment Variables).",
+        "NO_STRUCTURED_OUTPUT",
+      ),
       422,
     );
   }

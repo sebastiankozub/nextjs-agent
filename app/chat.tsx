@@ -21,7 +21,7 @@ export default function Chat({ modelId }: { modelId: string | null }) {
         <div>
           <h1>Studio Nova</h1>
           {/* Nazwa modelu (bez klucza) z konfiguracji serwera — do porównywania testów. */}
-          <p className="model-id">model: {modelId ?? "brak OPENROUTER_MODEL"}</p>
+          <p className="model-id">model: {modelId ?? "brak konfiguracji modelu"}</p>
         </div>
         <form action="/api/logout" method="post">
           <button type="submit" className="logout">
