@@ -377,6 +377,7 @@ const TOOL_LABELS: Record<string, string> = {
   vision: "👁️ analiza zdjęcia",
   generowanieObrazu: "🎨 generowanie obrazu",
   generujObraz: "🎨 generowanie obrazu",
+  wyszukajWInternecie: "🔎 wyszukiwanie",
   web_search: "🔎 wyszukiwanie",
   aktualnyCzas: "🕒 aktualnyCzas",
   pogoda: "🌤️ pogoda",
@@ -403,7 +404,10 @@ function ToolLabels({ message, previous }: { message: UIMessage; previous?: UIMe
     if (isToolUIPart(part)) push(getToolName(part));
     // Wyszukiwanie OpenRoutera działa po stronie OpenRoutera — śladem są źródła (jedna etykieta na blok źródeł).
     else if (part.type === "source-url") {
-      if (!sawSearch || used[used.length - 1]?.name !== "web_search") push("web_search");
+      const hasSearchTool = message.parts.some(
+        (p) => isToolUIPart(p) && getToolName(p) === "wyszukajWInternecie",
+      );
+      if (!hasSearchTool && (!sawSearch || used[used.length - 1]?.name !== "web_search")) push("web_search");
       sawSearch = true;
     }
   }

@@ -1,5 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { APICallError, generateImage, NoContentGeneratedError } from "ai";
+import { generateImage, NoContentGeneratedError } from "ai";
+import { describeProviderError, getOpenRouterConfig } from "./openrouter-config";
 
 // Wspólne generowanie obrazu: przycisk „Wygeneruj obraz” (/api/image) i narzędzie czatu generujObraz.
 // Model obrazów: OPENROUTER_IMAGE_MODEL (czat i Vision używają OPENROUTER_MODEL).
@@ -11,31 +12,11 @@ export type ImageResult =
   | { ok: true; image: string; mediaType: string; modelId: string | null }
   | { ok: false; error: string; status: number };
 
-function describeError(error: unknown): string {
-  if (APICallError.isInstance(error)) {
-    switch (error.statusCode) {
-      case 401:
-        return "OpenRouter odrzucił klucz API. Sprawdź OPENROUTER_API_KEY w .env.local.";
-      case 402:
-        return "Brak środków na koncie OpenRouter dla modelu obrazów.";
-      case 403:
-      case 404:
-        return "Model obrazów jest niedostępny dla tego klucza. Sprawdź OPENROUTER_IMAGE_MODEL albo zgłoś to prowadzącemu.";
-      case 429:
-        return "Za dużo zapytań. Odczekaj chwilę i spróbuj ponownie.";
-    }
-  }
-  if (NoContentGeneratedError.isInstance(error)) {
-    return "Model nie zwrócił obrazu. Spróbuj innego opisu.";
-  }
-  return "Nie udało się wygenerować obrazu. Szczegóły są w terminalu serwera.";
-}
 
 export async function generateStudioImage(prompt: unknown, logTag: string): Promise<ImageResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return { ok: false, error: "Brak konfiguracji: OPENROUTER_API_KEY. Uzupełnij .env.local.", status: 500 };
-  }
+  const config = getOpenRouterConfig();
+  if (!config.ok) return { ok: false, error: config.message, status: 500 };
+  const { apiKey } = config;
   if (typeof prompt !== "string" || prompt.trim() === "") {
     return { ok: false, error: "Wpisz opis obrazu.", status: 400 };
   }
@@ -43,7 +24,7 @@ export async function generateStudioImage(prompt: unknown, logTag: string): Prom
     return { ok: false, error: `Opis jest za długi (maks. ${MAX_IMAGE_PROMPT} znaków).`, status: 400 };
   }
 
-  const imageModelId = process.env.OPENROUTER_IMAGE_MODEL || DEFAULT_IMAGE_MODEL;
+  const imageModelId = process.env.OPENROUTER_IMAGE_MODEL?.trim() || DEFAULT_IMAGE_MODEL;
   try {
     const openrouter = createOpenRouter({ apiKey });
     const result = await generateImage({
@@ -59,6 +40,13 @@ export async function generateStudioImage(prompt: unknown, logTag: string): Prom
     };
   } catch (error) {
     console.error(`[${logTag}]`, error);
-    return { ok: false, error: describeError(error), status: 502 };
+        if (NoContentGeneratedError.isInstance(error)) {
+      return { ok: false, error: "Model nie zwrócił obrazu. Spróbuj innego opisu.", status: 502 };
+    }
+    return {
+      ok: false,
+      error: describeProviderError(error, "generowanie obrazu", imageModelId, "OPENROUTER_IMAGE_MODEL"),
+      status: 502,
+    };
   }
 }

@@ -3,6 +3,7 @@ import { runAnalysis } from "./analysis-run";
 import { analyzeDocumentImage } from "./analyze-image-run";
 import { IMAGE_MAX_BYTES, IMAGE_TYPES } from "./images";
 import { ANALYSIS_INSTRUCTIONS } from "./instructions";
+import { getOpenRouterConfig } from "./openrouter-config";
 
 // Tryb "analyze" endpointu /api/agent: wynik ustrukturyzowany (JSON), bez streamingu i bez narzędzi.
 // - { message }: analiza wiadomości (category, priority, draft, needs_review) + reply (wspólne buildChatReply),
@@ -14,11 +15,9 @@ function fail(kind: string, message: string, status: number) {
 }
 
 export async function handleAnalyze(body: unknown): Promise<Response> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const modelId = process.env.OPENROUTER_MODEL;
-  if (!apiKey || !modelId) {
-    return fail("config", "Brak konfiguracji OPENROUTER_API_KEY lub OPENROUTER_MODEL w .env.local.", 500);
-  }
+  const config = getOpenRouterConfig();
+  if (!config.ok) return fail("config", config.message, 500);
+  const { apiKey, modelId } = config;
 
   const image = (body as { image?: unknown } | null)?.image;
 

@@ -7,6 +7,7 @@ import {
   Output,
 } from "ai";
 import { analysisSchema, interpretModelOutput, type AnalysisOutcome } from "./analysis";
+import { describeProviderError as providerMessage } from "./openrouter-config";
 
 // Wspólne wywołanie modelu dla analizy wiadomości. Używają go:
 // - /api/analyze (panel „Analiza wiadomości”).
@@ -22,7 +23,7 @@ function fail(kind: string, message: string, status: number): RunResult {
   return { ok: false, kind, message, status };
 }
 
-export function describeProviderError(error: APICallError): RunResult {
+export function describeProviderError(error: APICallError, modelId = "OPENROUTER_MODEL"): RunResult {
   const body = (error.responseBody ?? "").toLowerCase();
   // OpenRouter z require_parameters: brak dostawcy obsługującego structured output.
   if (
@@ -45,13 +46,13 @@ export function describeProviderError(error: APICallError): RunResult {
         422,
       );
     case 401:
-      return fail("provider", "OpenRouter odrzucił klucz API. Sprawdź OPENROUTER_API_KEY w .env.local.", 502);
+      return fail("provider", providerMessage(error, "analiza", modelId), 502);
     case 402:
       return fail("provider", "Brak środków na koncie OpenRouter dla tego modelu.", 502);
     case 429:
       return fail("provider", "Za dużo zapytań. Odczekaj chwilę i spróbuj ponownie.", 429);
     default:
-      return fail("provider", "Błąd dostawcy modelu. Szczegóły są w terminalu serwera.", 502);
+      return fail("provider", providerMessage(error, "analiza", modelId), 502);
   }
 }
 
@@ -104,7 +105,7 @@ export async function runAnalysis(options: {
     }
     if (APICallError.isInstance(error)) {
       console.error(`[${options.logTag}]`, error.statusCode, error.responseBody);
-      return describeProviderError(error);
+      return describeProviderError(error, options.modelId);
     }
     console.error(`[${options.logTag}]`, error);
     return fail("provider", "Nie udało się uzyskać analizy. Szczegóły są w terminalu serwera.", 502);

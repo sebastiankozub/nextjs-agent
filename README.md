@@ -80,7 +80,7 @@ Nad odpowiedzią czat pokazuje etykiety użytych narzędzi, pod odpowiedzią —
 
 | Etykieta | Narzędzie | Skąd dane |
 |---|---|---|
-| 🔎 wyszukiwanie | `web_search` (`openrouter.tools.webSearch`, `engine: "native"`, 3 wyniki) | wyszukiwarka po stronie OpenRoutera |
+| 🔎 wyszukiwanie | `wyszukajWInternecie` – osobne wywołanie modelu z `openrouter.tools.webSearch` (`engine: "native"` = Google, 3 wyniki); zwraca streszczenie + źródła, serwer wysyła je jako listę „Źródła” | wyszukiwarka Google po stronie OpenRoutera |
 | 🕒 aktualnyCzas | `aktualnyCzas` — data, dzień tygodnia, godzina (Europe/Warsaw) | zegar serwera |
 | 🌤️ pogoda | `pogoda` — miasto, opcjonalnie data i godzina | Open-Meteo (geocoding + forecast) |
 | 💱 kursWaluty | `kursWaluty` — kod lub polska nazwa waluty → kurs średni vs PLN | NBP (tabele A i B) |
