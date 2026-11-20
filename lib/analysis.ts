@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ModelMessage, UIMessage } from "ai";
 
 // Schemat wyniku analizy (W2). strictObject = dodatkowe pola są odrzucane
 // (odpowiednik "additionalProperties": false).
@@ -170,4 +171,176 @@ export const MAX_CHAT_CONTEXT_MESSAGES = 10;
  */
 export function buildChatReply(analysis: Analysis): string {
   return analysis.draft.trim();
+}
+
+// --- Czat: historia z przeglądarki -> wiadomości dla modelu (testowane w tests/analysis.test.mjs) ---
+
+/**
+ * Historia z przeglądarki -> wiadomości dla modelu:
+ * - "user": tekst jako dane między <<< >>> (znaczniki neutralizowane) + zdjęcia
+ *   (już sprawdzone przez validateImages); ostatnia oznaczona jako aktualna,
+ * - "assistant": TYLKO gdy ma poprawny podpis serwera (replySig) – wtedy sam tekst
+ *   sprawdzonej odpowiedzi, bez części narzędzi; bez podpisu – pomijana (luka R4 z L2W3),
+ * - inna rola: odrzucenie całego zapytania.
+ */
+export function toChatModelMessages(
+  messages: UIMessage[],
+  isTrustedReply: (text: string, sig: unknown) => boolean,
+): { ok: true; messages: ModelMessage[] } | { ok: false; error: string } {
+  const out: ModelMessage[] = [];
+  const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+
+  if (messages.some((m) => m.role !== "user" && m.role !== "assistant")) {
+    return { ok: false, error: "Niedozwolona rola wiadomości." };
+  }
+
+  for (let index = 0; index < messages.length; index++) {
+    const m = messages[index];
+    const text = m.parts
+      .map((p) => (p.type === "text" ? p.text : ""))
+      .join("")
+      .trim();
+
+    if (m.role === "assistant") {
+      const sig = (m.metadata as { replySig?: unknown } | undefined)?.replySig;
+      if (text && isTrustedReply(text, sig)) {
+        out.push({ role: "assistant", content: text });
+      }
+      continue;
+    }
+
+    if (text.length > MAX_MESSAGE_LENGTH) {
+      return { ok: false, error: `Wiadomość jest za długa (max ${MAX_MESSAGE_LENGTH} znaków).` };
+    }
+    const label =
+      index === lastUserIndex
+        ? "AKTUALNA wiadomość użytkownika – odpowiedz tylko na nią (dane)"
+        : "Wcześniejsza wiadomość użytkownika – już obsłużona, tylko kontekst (dane)";
+
+    const content: Extract<ModelMessage, { role: "user" }>["content"] = [];
+    if (text) {
+      content.push({ type: "text", text: `${label}:\n<<<\n${neutralizeDelimiters(text)}\n>>>` });
+    }
+    for (const p of m.parts) {
+      if (p.type !== "file") continue;
+      const match = /^data:([^;]+);base64,(.*)$/.exec(p.url);
+      if (match) content.push({ type: "image", image: match[2], mediaType: match[1] });
+    }
+    if (content.length > 0) out.push({ role: "user", content });
+  }
+
+  // Ograniczenie kontekstu; zaczynamy zawsze od wiadomości użytkownika.
+  let trimmed = out.slice(-MAX_CHAT_CONTEXT_MESSAGES * 2);
+  while (trimmed.length > 0 && trimmed[0].role !== "user") trimmed = trimmed.slice(1);
+  return { ok: true, messages: trimmed };
+}
+
+// --- Czat: odpowiedź z listą niedokończonych zadań (W2: limit kroków bez wprowadzania w błąd) ---
+
+/** Schemat narzędzia „odpowiedz” w czacie = schemat analizy + opcjonalne niedokończone zadania. */
+export const chatAnswerSchema = analysisSchema.extend({
+  niedokonczone: z
+    .array(
+      z.strictObject({
+        zadanie: z.string().min(3).max(200).describe("Co zostało do zrobienia, np. „wygenerować wykres kursów”"),
+        polecenie: z
+          .string()
+          .min(3)
+          .max(1000)
+          .describe("Gotowa wiadomość do wysłania, żeby dokończyć – z już ustalonymi danymi"),
+      }),
+    )
+    .max(3)
+    .optional()
+    .describe("Części zadania, których nie zdążyłeś wykonać (np. zabrakło kroków)"),
+});
+
+export type UnfinishedTask = { zadanie: string; polecenie: string };
+
+/** Jedno wywołanie narzędzia w zadaniu (zapisuje serwer – lib/agent-chat.ts). */
+export type ToolCallRecord = { step: number; toolName: string; key: string; output: unknown; ms: number; ok: boolean };
+
+/** Czego nie udało się sprawdzić: narzędzia, których ostatnie wywołanie zwróciło błąd. */
+export function summarizeFailures(calls: ToolCallRecord[]): string[] {
+  const lastByTool = new Map<string, ToolCallRecord>();
+  for (const call of calls) lastByTool.set(call.toolName, call);
+  return [...lastByTool.values()]
+    .filter((call) => !call.ok)
+    .map((call) => `${call.toolName}: ${describeToolOutput(call.output).replace(/^błąd: /, "")}`);
+}
+
+/** Notka dopisywana do odpowiedzi: czego nie udało się sprawdzić + czego nie zdążyłem. */
+export function buildUnfinishedNote(tasks: UnfinishedTask[], failures: string[] = []): string {
+  const parts: string[] = [];
+  if (failures.length > 0) {
+    parts.push(`Nie udało się sprawdzić:\n${failures.map((f) => `– ${f}`).join("\n")}`);
+  }
+  if (tasks.length > 0) {
+    const list = tasks.map((t) => `– ${t.zadanie}`).join("\n");
+    parts.push(
+      `Nie zdążyłem jeszcze:\n${list}\nPropozycję polecenia wpisałem w pole wiadomości – wyślij ją, jeśli chcesz dokończyć.`,
+    );
+  }
+  return parts.join("\n\n");
+}
+
+/** Jedno polecenie do pola wiadomości (gdy zadań jest kilka – łączymy je). */
+export function buildContinuationPrompt(tasks: UnfinishedTask[]): string | null {
+  if (tasks.length === 0) return null;
+  if (tasks.length === 1) return tasks[0].polecenie;
+  return tasks.map((t, i) => `${i + 1}. ${t.polecenie}`).join("\n");
+}
+
+/** Polecenie kontynuacji po twardym limicie (model nie zdążył nawet odpowiedzieć). */
+export function buildLimitContinuationPrompt(lastUserText: string): string {
+  const task = lastUserText.trim().slice(0, 500);
+  return `Dokończ poprzednie zadanie: „${task}”. Wykorzystaj dane ustalone w poprzedniej odpowiedzi i nie pobieraj ich ponownie.`;
+}
+
+/** Krótki opis jednego wyniku narzędzia (do komunikatu o limicie kroków). */
+export function describeToolOutput(output: unknown): string {
+  if (output == null) return "brak wyniku";
+  if (typeof output !== "object") return String(output);
+  const o = output as Record<string, unknown>;
+  if (typeof o.blad === "string") return `błąd: ${o.blad}`;
+  if (typeof o.podsumowanie === "string") return o.podsumowanie;
+  const text = Object.entries(o)
+    .filter(([key]) => !["image", "zrodla", "pobrano"].includes(key))
+    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .join(", ");
+  return text || "brak danych";
+}
+
+/** Nagłówek komunikatu, gdy pętla skończyła się na limicie (a model nie zdążył odpowiedzieć). */
+export function buildLimitHeader(
+  reason: "steps" | "toolCalls" | "time",
+  limits: { maxSteps: number; maxToolCalls: number; maxTaskMs: number },
+): string {
+  if (reason === "toolCalls") return `Zatrzymałem się po ${limits.maxToolCalls} wywołaniach narzędzi.`;
+  if (reason === "time") return `Zatrzymałem się po ${Math.round(limits.maxTaskMs / 1000)} s (limit czasu na zadanie).`;
+  return `Zatrzymałem się po ${limits.maxSteps} krokach.`;
+}
+
+/** Wynik narzędzia zawiera błąd (pole „blad”). */
+export function hasError(output: unknown): boolean {
+  return typeof output === "object" && output !== null && typeof (output as { blad?: unknown }).blad === "string";
+}
+
+/**
+ * Komunikat po limicie (kroki, wywołania narzędzi albo czas): nagłówek + to, co agent zdążył ustalić.
+ * Nigdy pusta odpowiedź. Błędy narzędzi są widoczne na liście („błąd: …”).
+ */
+export function buildPartialReply(
+  header: string,
+  calls: Array<Pick<ToolCallRecord, "step" | "toolName" | "output">>,
+): string {
+  const found = calls.map((call) => {
+    const opis =
+      call.toolName === "generujObraz" && !hasError(call.output) ? "obraz wygenerowany" : describeToolOutput(call.output);
+    const short = opis.length > 300 ? `${opis.slice(0, 300)}…` : opis;
+    return `${call.step}. ${call.toolName}: ${short}`;
+  });
+  const next = "Propozycję polecenia, które dokończy zadanie, wpisałem w pole wiadomości.";
+  if (found.length === 0) return `${header} Nie zdążyłem niczego ustalić. ${next}`;
+  return `${header} Do tej pory ustaliłem:\n${found.join("\n")}\n\nNie zdążyłem dokończyć zadania. ${next}`;
 }

@@ -56,7 +56,7 @@ Przykład: „Jaka będzie jutro pogoda w Krakowie?”
 4. Krok 1: `czas` → 🕒. Krok 2: `pogoda` → 🌤️. Etykiety idą do przeglądarki na żywo.
 5. Ostatni krok: narzędzie `odpowiedz` z argumentami w schemacie analizy (`category`, `priority`, `draft`, `needs_review`).
    AI SDK sprawdza je schematem Zod, potem `execute()` uruchamia **wspólny kod**:
-   `validateAnalysis` → `buildChatReply`. `stopWhen` kończy pętlę, gdy ostatni krok to samo `odpowiedz` (bez innych narzędzi w tym kroku) (maks. `MAX_AGENT_STEPS` kroków, `lib/instructions.ts`; po limicie odpowiedź „Przerwałem po N krokach”).
+   `validateAnalysis` → `buildChatReply`. `stopWhen` kończy pętlę, gdy ostatni krok to samo `odpowiedz` (bez innych narzędzi w tym kroku) (limity z `.env.local`, czytane w `lib/instructions.ts` → `readAgentLimits`: `AGENT_MAX_STEPS` = 6 kroków, `AGENT_MAX_TOOL_CALLS` = 16 wywołań narzędzi, `AGENT_MAX_TASK_SECONDS` = 60 s na zadanie, `AGENT_TOOL_TIMEOUT_SECONDS` = 10 s na odpowiedź API narzędzia, `AGENT_SLOW_TOOL_TIMEOUT_SECONDS` = 40 s dla `generujObraz` i `wyszukajWInternecie`; każde narzędzie idzie przez strażnika, który pilnuje limitów, nie powtarza nieudanego wywołania i mierzy czas; gdy pętla musi się skończyć, dostępne jest tylko `odpowiedz` (`prepareStep`, `buildLastStepRule`); pod odpowiedzią widać liczbę kroków, wywołań narzędzi i czasy; niedokończone części zadania model wpisuje w `niedokonczone`, a serwer wstawia propozycję polecenia w pole wiadomości. Po twardym limicie: „Zatrzymałem się po N krokach” + lista ustaleń).
 6. Serwer wysyła **sprawdzony** tekst odpowiedzi i jego podpis (`replySig`).
    Wolny tekst modelu i surowe argumenty `odpowiedz` są odfiltrowane na serwerze – nigdy nie trafiają do przeglądarki.
 

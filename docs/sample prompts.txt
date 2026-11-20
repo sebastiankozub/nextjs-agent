@@ -1,0 +1,1 @@
+Kurs EUR, USD, CHF, RUB, YEN później: policz 1000 zł w każdej, potem wygeneruj wykres. Design wykresu:  Sprawdz pogodę w Warszawie na kolejny dzień roboczy i zrób tło aby pasowało do Warszawy i tej pogody.

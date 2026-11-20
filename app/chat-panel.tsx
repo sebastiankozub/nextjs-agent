@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 // Podpowiedzi opisów obrazu w temacie Studio Nova (klik = wstawienie do pola wiadomości).
 const IMAGE_PROMPT_HINTS = [
@@ -71,6 +71,19 @@ export default function ChatPanel({
   const [image, setImage] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Agent nie zdążył wszystkiego (limit kroków): serwer podsyła propozycję następnej wiadomości.
+  // Wpisujemy ją w pole wiadomości (tylko gdy jest puste) – użytkownik sam decyduje, czy ją wysłać.
+  const appliedContinuation = useRef<string | null>(null);
+  useEffect(() => {
+    if (status !== "ready") return;
+    const last = messages[messages.length - 1];
+    if (last?.role !== "assistant" || appliedContinuation.current === last.id) return;
+    const continuation = (last.metadata as { continuation?: unknown } | undefined)?.continuation;
+    if (typeof continuation !== "string" || !continuation.trim()) return;
+    appliedContinuation.current = last.id;
+    setInput((current) => (current.trim() ? current : continuation));
+  }, [status, messages]);
 
   const busy = status === "submitted" || status === "streaming" || generating;
   const canSend = (input.trim() !== "" || image !== null) && !busy;
@@ -223,6 +236,7 @@ export default function ChatPanel({
             })}
             <Sources message={message} />
             <ModelUsed message={message} previous={messages[index - 1]} />
+            <AnswerStats message={message} />
             {messageErrors[message.id] && (
               <p className="msg-error" role="alert">
                 ⚠️ {messageErrors[message.id]}
@@ -341,6 +355,53 @@ function ModelUsed({ message, previous }: { message: UIMessage; previous?: UIMes
   return <small className="model-used">model: {modelId}</small>;
 }
 
+// Statystyki pod odpowiedzią (serwer: metadane „stats”): kroki, wywołania narzędzi, czasy.
+type AnswerStatsData = {
+  steps: number;
+  toolCalls: number;
+  totalMs: number;
+  stepMs: number[];
+  calls: Array<{ step: number; toolName: string; ms: number; ok: boolean }>;
+  limit: "steps" | "toolCalls" | "time" | null;
+};
+
+const seconds = (ms: number) => `${(ms / 1000).toLocaleString("pl-PL", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
+
+// Polska odmiana: 1 krok, 2–4 kroki, 5+ kroków (12–14 też „kroków”).
+function plural(n: number, one: string, few: string, many: string) {
+  if (n === 1) return one;
+  const last = n % 10;
+  const lastTwo = n % 100;
+  return last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14) ? few : many;
+}
+
+const LIMIT_LABELS = { steps: "limit kroków", toolCalls: "limit wywołań narzędzi", time: "limit czasu" };
+
+function AnswerStats({ message }: { message: UIMessage }) {
+  if (message.role !== "assistant") return null;
+  const stats = (message.metadata as { stats?: AnswerStatsData } | undefined)?.stats;
+  if (!stats) return null;
+  const { steps, toolCalls, totalMs, stepMs, calls, limit } = stats;
+  return (
+    <small className="answer-stats">
+      <span>
+        {steps} {plural(steps, "krok", "kroki", "kroków")} · {toolCalls}{" "}
+        {plural(toolCalls, "wywołanie narzędzia", "wywołania narzędzi", "wywołań narzędzi")} · razem {seconds(totalMs)}
+        {limit && ` · ${LIMIT_LABELS[limit]}`}
+      </span>
+      {stepMs.length > 0 && <span>kroki: {stepMs.map((ms, i) => `${i + 1}. ${seconds(ms)}`).join(" · ")}</span>}
+      {calls.length > 0 && (
+        <span>
+          narzędzia:{" "}
+          {calls
+            .map((c) => `${c.ok ? "" : "✗ "}${c.step}. ${TOOL_LABELS[c.toolName] ?? c.toolName} ${seconds(c.ms)}`)
+            .join(" · ")}
+        </span>
+      )}
+    </small>
+  );
+}
+
 // Lista „Źródła” pod odpowiedzią (tylko gdy model użył wyszukiwania).
 function Sources({ message }: { message: UIMessage }) {
   const sources = message.parts.filter((part) => part.type === "source-url");
@@ -405,12 +466,16 @@ const TOOL_LABELS: Record<string, string> = {
 function ToolLabels({ message, previous }: { message: UIMessage; previous?: UIMessage }) {
   if (message.role !== "assistant") return null;
 
-  // Kolejność użycia narzędzi; kolejne wywołania tego samego narzędzia pod rząd liczymy (×2).
-  const used: { name: string; count: number }[] = [];
+  // Kroki agenta po kolei. Każdy krok modelu zaczyna się częścią "step-start";
+  // w jednym kroku może być kilka narzędzi (wywołanych równolegle) – liczymy je (×2).
+  // Krok bez narzędzi (np. samo „odpowiedz”, ukryte przez serwer) pomijamy.
+  const steps: { name: string; count: number }[][] = [];
   const push = (name: string) => {
-    const last = used[used.length - 1];
-    if (last?.name === name) last.count++;
-    else used.push({ name, count: 1 });
+    if (steps.length === 0) steps.push([]);
+    const current = steps[steps.length - 1];
+    const same = current.find((t) => t.name === name);
+    if (same) same.count++;
+    else current.push({ name, count: 1 });
   };
   // Obraz wygenerowany przyciskiem „Wygeneruj obraz”.
   if (isGeneratedImageMessage(message)) push("generowanieObrazu");
@@ -418,26 +483,30 @@ function ToolLabels({ message, previous }: { message: UIMessage; previous?: UIMe
   else if (previous?.role === "user" && previous.parts.some((p) => p.type === "file")) push("vision");
   let sawSearch = false;
   for (const part of message.parts) {
-    if (isToolUIPart(part)) push(getToolName(part));
+    if (part.type === "step-start") steps.push([]);
+    else if (isToolUIPart(part)) push(getToolName(part));
     // Wyszukiwanie OpenRoutera działa po stronie OpenRoutera — śladem są źródła (jedna etykieta na blok źródeł).
     else if (part.type === "source-url") {
       const hasSearchTool = message.parts.some(
         (p) => isToolUIPart(p) && getToolName(p) === "wyszukajWInternecie",
       );
-      if (!hasSearchTool && (!sawSearch || used[used.length - 1]?.name !== "web_search")) push("web_search");
+      if (!hasSearchTool && !sawSearch) push("web_search");
       sawSearch = true;
     }
   }
+  const used = steps.filter((tools) => tools.length > 0);
   if (used.length === 0) return null;
 
   return (
-    <div className="tool-labels" aria-label="Użyte narzędzia po kolei">
-      {used.map(({ name, count }, i) => (
+    <div className="tool-labels" aria-label="Kroki agenta po kolei">
+      {used.map((tools, i) => (
         <span key={i} className="tool-step">
           {i > 0 && <span className="tool-arrow">→</span>}
           <span className="tool-label">
-            {TOOL_LABELS[name] ?? `🛠 ${name}`}
-            {count > 1 && ` ×${count}`}
+            {i + 1}.{" "}
+            {tools
+              .map(({ name, count }) => `${TOOL_LABELS[name] ?? `🛠 ${name}`}${count > 1 ? ` ×${count}` : ""}`)
+              .join(" + ")}
           </span>
         </span>
       ))}

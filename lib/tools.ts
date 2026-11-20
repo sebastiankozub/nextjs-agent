@@ -1,10 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { AGENT_LIMITS } from "./instructions";
 
 // ---------- Wspólne pomocnicze ----------
 
 const TIMEZONE = "Europe/Warsaw";
-const TIMEOUT_MS = 8000;
+// Ile czekamy na odpowiedź API (AGENT_TOOL_TIMEOUT_SECONDS, domyślnie 10 s).
+const TIMEOUT_MS = AGENT_LIMITS.toolTimeoutMs;
 
 function teraz() {
   return new Date().toLocaleString("pl-PL", { timeZone: TIMEZONE });
@@ -1052,10 +1054,20 @@ export const notatki = tool({
 // Tylko informacja tak/nie o zmiennych środowiskowych – nigdy ich wartości.
 
 const ZMIENNE_WYMAGANE = ["OPENROUTER_API_KEY", "OPENROUTER_MODEL", "CHAT_PASSWORD", "SESSION_SECRET"] as const;
-const ZMIENNE_OPCJONALNE = ["OPENROUTER_IMAGE_MODEL", "COINGECKO_DEMO_API_KEY"] as const;
+const ZMIENNE_OPCJONALNE = [
+  "OPENROUTER_IMAGE_MODEL",
+  "COINGECKO_DEMO_API_KEY",
+  "AGENT_MAX_STEPS",
+  "AGENT_MAX_TOOL_CALLS",
+  "AGENT_MAX_TASK_SECONDS",
+  "AGENT_TOOL_TIMEOUT_SECONDS",
+  "AGENT_SLOW_TOOL_TIMEOUT_SECONDS",
+] as const;
 const ustawiona = (name: string) => ((process.env[name] ?? "").trim() !== "" ? "tak" : "nie");
 
-export function createDiagnostyka(info: () => { model: string; narzedzia: string[]; limitKrokow: number }) {
+export function createDiagnostyka(
+  info: () => { model: string; narzedzia: string[]; limitKrokow: number; limity?: Record<string, number> },
+) {
   return tool({
     description:
       "Diagnostyka agenta: nazwa modelu, lista dostępnych narzędzi, limit kroków i informacja, " +
@@ -1063,7 +1075,7 @@ export function createDiagnostyka(info: () => { model: string; narzedzia: string
       "Użyj, gdy użytkownik pyta o stan, konfigurację lub gotowość agenta.",
     inputSchema: z.object({}),
     execute: async () => {
-      const { model, narzedzia, limitKrokow } = info();
+      const { model, narzedzia, limitKrokow, limity } = info();
       const wymagane = Object.fromEntries(ZMIENNE_WYMAGANE.map((n) => [n, ustawiona(n)]));
       const opcjonalne = Object.fromEntries(ZMIENNE_OPCJONALNE.map((n) => [n, ustawiona(n)]));
       const brakuje = ZMIENNE_WYMAGANE.filter((n) => wymagane[n] === "nie");
@@ -1072,6 +1084,7 @@ export function createDiagnostyka(info: () => { model: string; narzedzia: string
         narzedzia,
         liczbaNarzedzi: narzedzia.length,
         limitKrokow,
+        limity,
         zmienneWymagane: wymagane,
         zmienneOpcjonalne: opcjonalne,
         gotowy: brakuje.length === 0 ? "tak" : `nie – brakuje: ${brakuje.join(", ")}`,

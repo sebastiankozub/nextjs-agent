@@ -1043,3 +1043,15 @@ a.download {
   .composer-bar .composer button { flex: 1 1 auto; }
   .login-card { padding: 22px; }
 }
+
+/* Statystyki pod odpowiedzią czatu: kroki, wywołania narzędzi, czasy (lekcja 4, W2). */
+.answer-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  white-space: normal;
+}

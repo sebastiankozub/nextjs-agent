@@ -7,16 +7,21 @@ import {
   streamText,
   tool,
   toUIMessageStream,
-  type ModelMessage,
   type UIMessage,
   type UIMessageChunk,
 } from "ai";
 import {
-  analysisSchema,
   buildChatReply,
-  MAX_CHAT_CONTEXT_MESSAGES,
-  MAX_MESSAGE_LENGTH,
-  neutralizeDelimiters,
+  buildContinuationPrompt,
+  buildLimitContinuationPrompt,
+  buildLimitHeader,
+  buildPartialReply,
+  buildUnfinishedNote,
+  chatAnswerSchema,
+  hasError,
+  summarizeFailures,
+  type ToolCallRecord,
+  toChatModelMessages,
   validateAnalysis,
 } from "./analysis";
 import { getAuthConfig, isValidReplySignature, signReply } from "./auth";
@@ -24,7 +29,7 @@ import { z } from "zod";
 import { validateImages } from "./images";
 import { describeProviderError, getOpenRouterConfig } from "./openrouter-config";
 import { generateStudioImage, MAX_IMAGE_PROMPT } from "./image-gen";
-import { CHAT_AGENT_INSTRUCTIONS, MAX_AGENT_STEPS } from "./instructions";
+import { AGENT_LIMITS, buildLastStepRule, CHAT_AGENT_INSTRUCTIONS, type LimitReason } from "./instructions";
 import {
   czas,
   createDiagnostyka,
@@ -49,8 +54,19 @@ import {
 // i sam składa tekst (buildChatReply). Wolny tekst modelu NIE trafia do przeglądarki.
 
 const ANSWER_TOOL = "odpowiedz";
-const MAX_STEPS = MAX_AGENT_STEPS;
-const STEP_LIMIT_REPLY = `Przerwałem po ${MAX_STEPS} krokach. Zadanie wymaga więcej kroków – podziel je na mniejsze pytania.`;
+// Wolne narzędzia (model językowy / generowanie obrazu po drodze) – dłuższy limit oczekiwania.
+const SLOW_TOOLS = new Set(["generujObraz", "wyszukajWInternecie"]);
+const TIMEOUT = Symbol("timeout");
+
+/** Statystyki zadania wysyłane do przeglądarki (pokazywane małym tekstem pod odpowiedzią). */
+export type ChatStats = {
+  steps: number;
+  toolCalls: number;
+  totalMs: number;
+  stepMs: number[];
+  calls: Array<{ step: number; toolName: string; ms: number; ok: boolean }>;
+  limit: LimitReason | null;
+};
 const FALLBACK_REPLY =
   "Nie udało się przygotować sprawdzonej odpowiedzi. Spróbuj ponownie albo zadaj pytanie inaczej.";
 
@@ -63,66 +79,6 @@ function textError(message: string, status: number) {
 }
 
 type AuthConfig = NonNullable<ReturnType<typeof getAuthConfig>>;
-
-/**
- * Historia z przeglądarki -> wiadomości dla modelu:
- * - "user": tekst jako dane między <<< >>> (znaczniki neutralizowane) + zdjęcia
- *   (już sprawdzone przez validateImages); ostatnia oznaczona jako aktualna,
- * - "assistant": TYLKO gdy ma poprawny podpis serwera (replySig) – wtedy sam tekst
- *   sprawdzonej odpowiedzi, bez części narzędzi; bez podpisu – pomijana (luka R4 z L2W3),
- * - inna rola: odrzucenie całego zapytania.
- */
-function toModelMessages(
-  messages: UIMessage[],
-  config: AuthConfig,
-): { ok: true; messages: ModelMessage[] } | { ok: false; error: string } {
-  const out: ModelMessage[] = [];
-  const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
-
-  if (messages.some((m) => m.role !== "user" && m.role !== "assistant")) {
-    return { ok: false, error: "Niedozwolona rola wiadomości." };
-  }
-
-  for (let index = 0; index < messages.length; index++) {
-    const m = messages[index];
-    const text = m.parts
-      .map((p) => (p.type === "text" ? p.text : ""))
-      .join("")
-      .trim();
-
-    if (m.role === "assistant") {
-      const sig = (m.metadata as { replySig?: unknown } | undefined)?.replySig;
-      if (text && isValidReplySignature(text, sig, config)) {
-        out.push({ role: "assistant", content: text });
-      }
-      continue;
-    }
-
-    if (text.length > MAX_MESSAGE_LENGTH) {
-      return { ok: false, error: `Wiadomość jest za długa (max ${MAX_MESSAGE_LENGTH} znaków).` };
-    }
-    const label =
-      index === lastUserIndex
-        ? "AKTUALNA wiadomość użytkownika – odpowiedz tylko na nią (dane)"
-        : "Wcześniejsza wiadomość użytkownika – już obsłużona, tylko kontekst (dane)";
-
-    const content: Extract<ModelMessage, { role: "user" }>["content"] = [];
-    if (text) {
-      content.push({ type: "text", text: `${label}:\n<<<\n${neutralizeDelimiters(text)}\n>>>` });
-    }
-    for (const p of m.parts) {
-      if (p.type !== "file") continue;
-      const match = /^data:([^;]+);base64,(.*)$/.exec(p.url);
-      if (match) content.push({ type: "image", image: match[2], mediaType: match[1] });
-    }
-    if (content.length > 0) out.push({ role: "user", content });
-  }
-
-  // Ograniczenie kontekstu; zaczynamy zawsze od wiadomości użytkownika.
-  let trimmed = out.slice(-MAX_CHAT_CONTEXT_MESSAGES * 2);
-  while (trimmed.length > 0 && trimmed[0].role !== "user") trimmed = trimmed.slice(1);
-  return { ok: true, messages: trimmed };
-}
 
 /** Krok zawiera wywołanie „odpowiedz” i ŻADNEGO innego narzędzia. */
 function isPureAnswerStep(step: { toolCalls: Array<{ toolName: string }> } | undefined): boolean {
@@ -171,7 +127,7 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
   const imageError = validateImages(messages);
   if (imageError) return textError(imageError, 400);
 
-  const converted = toModelMessages(messages, authConfig);
+  const converted = toChatModelMessages(messages, (text, sig) => isValidReplySignature(text, sig, authConfig));
   if (!converted.ok) return textError(converted.error, 400);
 
   const openrouter = createOpenRouter({ apiKey });
@@ -179,6 +135,60 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       let finalReply: string | null = null;
+      // Limity zadania (env, lib/instructions.ts): kroki, wywołania narzędzi, czas, timeout narzędzia.
+      const limits = AGENT_LIMITS;
+      const startedAt = Date.now();
+      const elapsed = () => Date.now() - startedAt;
+      const calls: ToolCallRecord[] = [];
+      let currentStep = 1;
+      let forcedReason: LimitReason | null = null;
+      // Twardy limit czasu całego zadania – przerywa wywołanie modelu.
+      const abort = new AbortController();
+      const deadlineTimer = setTimeout(() => abort.abort(), limits.maxTaskMs);
+
+      /**
+       * Strażnik każdego narzędzia (oprócz „odpowiedz”): limit wywołań, brak powtórek nieudanych wywołań,
+       * timeout odpowiedzi API, pomiar czasu. Narzędzie nigdy nie rzuca – zwraca { blad }.
+       */
+      const guard =
+        (name: string, execute: (input: unknown, options: unknown) => unknown) =>
+        async (input: unknown, options: unknown) => {
+          const key = `${name}:${JSON.stringify(input)}`;
+          if (calls.length >= limits.maxToolCalls) {
+            return { blad: `Wykorzystano limit ${limits.maxToolCalls} wywołań narzędzi – nie wywołano ${name}.` };
+          }
+          if (calls.some((call) => call.key === key && !call.ok)) {
+            return { blad: "To samo wywołanie już się nie udało – nie powtarzam go. Powiedz, czego nie udało się sprawdzić." };
+          }
+          const remaining = limits.maxTaskMs - elapsed();
+          if (remaining < 1000) return { blad: "Brak czasu na kolejne narzędzie." };
+          const timeoutMs = Math.min(SLOW_TOOLS.has(name) ? limits.slowToolTimeoutMs : limits.toolTimeoutMs, remaining);
+          const started = Date.now();
+          const record = (output: unknown) => {
+            calls.push({ step: currentStep, toolName: name, key, output, ms: Date.now() - started, ok: !hasError(output) });
+            return output;
+          };
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const output = await Promise.race([
+              Promise.resolve(execute(input, options)),
+              new Promise<typeof TIMEOUT>((resolve) => {
+                timer = setTimeout(() => resolve(TIMEOUT), timeoutMs);
+              }),
+            ]);
+            if (output === TIMEOUT) {
+              return record({ blad: `Źródło nie odpowiada (brak odpowiedzi w ${Math.round(timeoutMs / 1000)} s).` });
+            }
+            return record(output);
+          } catch (error) {
+            console.error(`[api/agent ${name}]`, error);
+            return record({ blad: "Źródło nie odpowiada (błąd połączenia)." });
+          } finally {
+            clearTimeout(timer);
+          }
+        };
+      // Propozycja następnej wiadomości (niedokończone zadania) – trafia do pola wiadomości w przeglądarce.
+      let continuation: string | null = null;
       let imagesThisTurn = 0;
       // Lista narzędzi dla diagnostyki – wypełniana poniżej, czytana dopiero przy wywołaniu.
       let toolNames: string[] = [];
@@ -187,6 +197,7 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
         model: openrouter(modelId),
         instructions: CHAT_AGENT_INSTRUCTIONS,
         messages: converted.messages,
+        abortSignal: abort.signal,
         tools: (() => {
           const tools = {
           // Wyszukiwanie Google jako NASZE narzędzie: osobne krótkie wywołanie modelu z wyszukiwarką
@@ -248,7 +259,13 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
           diagnostyka: createDiagnostyka(() => ({
             model: modelId,
             narzedzia: toolNames,
-            limitKrokow: MAX_STEPS,
+            limitKrokow: limits.maxSteps,
+            limity: {
+              wywolanNarzedzi: limits.maxToolCalls,
+              czasZadaniaS: limits.maxTaskMs / 1000,
+              czasNarzedziaS: limits.toolTimeoutMs / 1000,
+              czasWolnegoNarzedziaS: limits.slowToolTimeoutMs / 1000,
+            },
           })),
           kursKrypto,
           // Generowanie obrazu: obraz idzie do przeglądarki (wynik narzędzia),
@@ -286,27 +303,57 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
           [ANSWER_TOOL]: tool({
             description:
               "Zakończ odpowiedź: przekaż wynik w schemacie analizy (category, priority, draft, needs_review). " +
-              "draft to pełna treść odpowiedzi dla użytkownika.",
-            inputSchema: analysisSchema,
-            execute: async (input) => {
-              const outcome = validateAnalysis(input);
+              "draft to pełna treść odpowiedzi dla użytkownika. niedokonczone – części zadania, których nie wykonałeś.",
+            inputSchema: chatAnswerSchema,
+            execute: async ({ niedokonczone = [], ...analysis }) => {
+              const outcome = validateAnalysis(analysis);
               if (!outcome.ok) {
                 return { status: "odrzucono", powod: outcome.details?.join(" ") ?? outcome.message };
               }
-              finalReply = buildChatReply(outcome.analysis);
+              // Notkę o błędach narzędzi i niedokończonych zadaniach składa serwer – model nie musi.
+              const note = buildUnfinishedNote(niedokonczone, summarizeFailures(calls));
+              finalReply = note ? `${buildChatReply(outcome.analysis)}\n\n${note}` : buildChatReply(outcome.analysis);
+              continuation = buildContinuationPrompt(niedokonczone);
               return { status: "przyjeto" };
             },
           }),
           };
           toolNames = Object.keys(tools);
+          // Każde narzędzie z danymi idzie przez strażnika (limity, timeout, pomiar czasu).
+          for (const [name, t] of Object.entries(tools)) {
+            const withExecute = t as { execute?: (input: unknown, options: unknown) => unknown };
+            if (name !== ANSWER_TOOL && withExecute.execute) withExecute.execute = guard(name, withExecute.execute);
+          }
           return tools;
         })(),
         // Model musi w każdym kroku wywołać narzędzie – nie ma drogi „zwykłym tekstem”.
         toolChoice: "required",
+        // Gdy pętla musi się skończyć (ostatni krok, limit wywołań narzędzi albo kończący się czas):
+        // tylko „odpowiedz” + jawna informacja dlaczego. Model nie zaczyna narzędzia, którego nie skończy,
+        // i nie tłumaczy limitu wymówką „nie mam możliwości”.
+        prepareStep: ({ stepNumber }) => {
+          currentStep = stepNumber + 1;
+          const answerReserveMs = Math.min(15_000, limits.maxTaskMs / 4);
+          const reason: LimitReason | null =
+            stepNumber >= limits.maxSteps - 1
+              ? "steps"
+              : calls.length >= limits.maxToolCalls
+                ? "toolCalls"
+                : elapsed() >= limits.maxTaskMs - answerReserveMs
+                  ? "time"
+                  : null;
+          if (!reason) return undefined;
+          forcedReason ??= reason;
+          return {
+            activeTools: [ANSWER_TOOL],
+            toolChoice: "required",
+            instructions: `${CHAT_AGENT_INSTRUCTIONS}\n\n${buildLastStepRule(reason)}`,
+          };
+        },
         // Koniec tylko wtedy, gdy ostatni krok to SAMO „odpowiedz”. Gdy model wywoła „odpowiedz”
         // równolegle z innym narzędziem (np. generujObraz), odpowiedź powstała bez wyników tych
         // narzędzi – pętla idzie dalej, żeby model odpowiedział jeszcze raz, już znając wyniki.
-        stopWhen: [({ steps }) => isPureAnswerStep(steps.at(-1)), isStepCount(MAX_STEPS)],
+        stopWhen: [({ steps }) => isPureAnswerStep(steps.at(-1)), isStepCount(limits.maxSteps)],
       });
 
       const uiStream = toUIMessageStream({
@@ -319,45 +366,94 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
           return undefined;
         },
         onError: (error) => {
+          if (abort.signal.aborted) return "Przekroczono limit czasu zadania.";
           console.error("[api/agent chat]", error);
           return describeProviderError(error, "czat", modelId);
         },
       });
 
       // Postęp na żywo (narzędzia, źródła); tekst i „odpowiedz” – zatrzymane.
+      // Przy okazji mierzymy czas każdego kroku modelu (start-step → finish-step).
       const answerCallIds = new Set<string>();
+      const stepMs: number[] = [];
+      let stepStartedAt: number | null = null;
       let finishChunk: UIMessageChunk | null = null;
       let failed = false;
       const reader = uiStream.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value.type === "finish") {
-          finishChunk = value;
-          continue;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value.type === "start-step") stepStartedAt = Date.now();
+          if (value.type === "finish-step" && stepStartedAt !== null) {
+            stepMs.push(Date.now() - stepStartedAt);
+            stepStartedAt = null;
+          }
+          if (value.type === "finish") {
+            finishChunk = value;
+            continue;
+          }
+          if (value.type === "error" || value.type === "abort") {
+            // Limit czasu to nie awaria – niżej składamy wynik częściowy.
+            if (abort.signal.aborted) continue;
+            failed = value.type === "error";
+          }
+          if (!isHidden(value, answerCallIds)) writer.write(value);
         }
-        if (value.type === "error") failed = true;
-        if (!isHidden(value, answerCallIds)) writer.write(value);
+      } catch (error) {
+        if (!abort.signal.aborted) throw error;
+      } finally {
+        clearTimeout(deadlineTimer);
       }
+      const timedOut = abort.signal.aborted;
+      // Krok przerwany limitem czasu też liczymy (do chwili przerwania).
+      if (stepStartedAt !== null) stepMs.push(Date.now() - stepStartedAt);
 
       // Odpowiedź PO walidacji – składana przez serwer.
       if (!failed) {
         const id = "answer";
         writer.write({ type: "text-start", id });
-        // Odpowiedź liczy się tylko z kroku „czystego” (samo odpowiedz). Inaczej: limit kroków
-        // („Przerwałem po N krokach”) albo inny problem – nigdy pusta odpowiedź.
-        const steps = await result.steps;
-        const answered = finalReply !== null && isPureAnswerStep(steps.at(-1));
+        // Odpowiedź liczy się tylko z kroku „czystego” (samo odpowiedz). Inaczej: limit (kroki, wywołania
+        // narzędzi, czas) → „Zatrzymałem się…” + to, co ustalono, albo inny problem – nigdy pusta odpowiedź.
+        let steps: Awaited<typeof result.steps> = [];
+        if (!timedOut) {
+          try {
+            steps = await result.steps;
+          } catch {}
+        }
+        const answered = finalReply !== null && (timedOut || isPureAnswerStep(steps.at(-1)));
+        const reason: LimitReason | null = timedOut
+          ? "time"
+          : (forcedReason ?? (steps.length >= limits.maxSteps ? "steps" : null));
         const reply = answered
           ? finalReply!
-          : steps.length >= MAX_STEPS
-            ? STEP_LIMIT_REPLY
+          : reason
+            ? buildPartialReply(buildLimitHeader(reason, limits), calls)
             : FALLBACK_REPLY;
+        if (!answered) {
+          const lastUserText = last.parts.map((p) => (p.type === "text" ? p.text : "")).join("").trim();
+          continuation = reason && lastUserText ? buildLimitContinuationPrompt(lastUserText) : null;
+        }
         writer.write({ type: "text-delta", id, delta: reply });
         writer.write({ type: "text-end", id });
         // Podpis serwera – przy następnym zapytaniu potwierdza, że to nasza odpowiedź.
-        writer.write({ type: "message-metadata", messageMetadata: { replySig: signReply(reply, authConfig) } });
+        // continuation – propozycja następnej wiadomości (przeglądarka wpisuje ją w pole, nie wysyła sama).
+        writer.write({
+          type: "message-metadata",
+          messageMetadata: { replySig: signReply(reply, authConfig), ...(continuation ? { continuation } : {}) },
+        });
       }
+
+      // Statystyki pod odpowiedzią: kroki, wywołania narzędzi, czasy.
+      const stats: ChatStats = {
+        steps: stepMs.length,
+        toolCalls: calls.length,
+        totalMs: elapsed(),
+        stepMs,
+        calls: calls.map(({ step, toolName, ms, ok }) => ({ step, toolName, ms, ok })),
+        limit: timedOut ? "time" : forcedReason,
+      };
+      writer.write({ type: "message-metadata", messageMetadata: { stats } });
       writer.write(finishChunk ?? { type: "finish" });
     },
   });
