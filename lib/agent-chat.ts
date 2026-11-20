@@ -25,7 +25,18 @@ import { validateImages } from "./images";
 import { describeProviderError, getOpenRouterConfig } from "./openrouter-config";
 import { generateStudioImage, MAX_IMAGE_PROMPT } from "./image-gen";
 import { CHAT_AGENT_INSTRUCTIONS, MAX_AGENT_STEPS } from "./instructions";
-import { aktualnyCzas, kursKrypto, kursWaluty, pogoda } from "./tools";
+import {
+  czas,
+  createDiagnostyka,
+  kalkulator,
+  kursKrypto,
+  notatki,
+  pogoda,
+  strefaCzasowa,
+  swieta,
+  waluty,
+  wikipedia,
+} from "./tools";
 
 // Czat ujednolicony = narzędzia i streaming z L3 + walidacja i bezpieczeństwo z L2W3.
 //
@@ -166,12 +177,15 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
     execute: async ({ writer }) => {
       let finalReply: string | null = null;
       let imagesThisTurn = 0;
+      // Lista narzędzi dla diagnostyki – wypełniana poniżej, czytana dopiero przy wywołaniu.
+      let toolNames: string[] = [];
 
       const result = streamText({
         model: openrouter(modelId),
         instructions: CHAT_AGENT_INSTRUCTIONS,
         messages: converted.messages,
-        tools: {
+        tools: (() => {
+          const tools = {
           // Wyszukiwanie Google jako NASZE narzędzie: osobne krótkie wywołanie modelu z wyszukiwarką
           // OpenRoutera. Tam model pisze zwykły tekst, więc OpenRouter dołącza linki (url_citation),
           // które AI SDK zbiera w result.sources. (W głównej pętli model kończy narzędziem „odpowiedz”,
@@ -216,9 +230,20 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
               }
             },
           }),
-          aktualnyCzas,
+          // Narzędzia z danymi (lekcja 4, W1) – definicje w lib/tools.ts.
           pogoda,
-          kursWaluty,
+          waluty,
+          swieta,
+          wikipedia,
+          kalkulator,
+          czas,
+          strefaCzasowa,
+          notatki,
+          diagnostyka: createDiagnostyka(() => ({
+            model: modelId,
+            narzedzia: toolNames,
+            limitKrokow: MAX_STEPS,
+          })),
           kursKrypto,
           // Generowanie obrazu: obraz idzie do przeglądarki (wynik narzędzia),
           // model dostaje tylko krótki tekst (toModelOutput). Maks. 1 obraz na turę.
@@ -266,7 +291,10 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
               return { status: "przyjeto" };
             },
           }),
-        },
+          };
+          toolNames = Object.keys(tools);
+          return tools;
+        })(),
         // Model musi w każdym kroku wywołać narzędzie – nie ma drogi „zwykłym tekstem”.
         toolChoice: "required",
         // Koniec tylko wtedy, gdy ostatni krok to SAMO „odpowiedz”. Gdy model wywoła „odpowiedz”

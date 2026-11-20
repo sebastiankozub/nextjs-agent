@@ -384,10 +384,19 @@ const TOOL_LABELS: Record<string, string> = {
   generujObraz: "🎨 generowanie obrazu",
   wyszukajWInternecie: "🔎 wyszukiwanie",
   web_search: "🔎 wyszukiwanie",
-  aktualnyCzas: "🕒 aktualnyCzas",
   pogoda: "🌤️ pogoda",
-  kursWaluty: "💱 kursWaluty",
+  waluty: "💱 waluty",
+  swieta: "🎉 święta",
+  wikipedia: "📖 Wikipedia",
+  kalkulator: "🧮 kalkulator",
+  czas: "🕒 czas",
+  strefaCzasowa: "🌍 strefa czasowa",
+  notatki: "📝 notatki",
+  diagnostyka: "🩺 diagnostyka",
   kursKrypto: "🦎🪙 kursKrypto",
+  // Stare nazwy (lekcja 3) – dla rozmów sprzed zmiany.
+  aktualnyCzas: "🕒 czas",
+  kursWaluty: "💱 waluty",
 };
 
 function ToolLabels({ message, previous }: { message: UIMessage; previous?: UIMessage }) {

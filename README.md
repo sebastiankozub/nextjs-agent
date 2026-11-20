@@ -53,7 +53,7 @@ Przykład: „Jaka będzie jutro pogoda w Krakowie?”
 2. `streamText` (pętla agenta AI SDK) wysyła modelowi rozmowę i listę narzędzi
    (nazwa, opis, schemat Zod jako JSON Schema). **Model decyduje**, jakie narzędzie wywołać.
 3. `toolChoice: "required"` – w każdym kroku model musi wywołać narzędzie (nie ma drogi „wolnym tekstem”).
-4. Krok 1: `aktualnyCzas` → 🕒. Krok 2: `pogoda` → 🌤️. Etykiety idą do przeglądarki na żywo.
+4. Krok 1: `czas` → 🕒. Krok 2: `pogoda` → 🌤️. Etykiety idą do przeglądarki na żywo.
 5. Ostatni krok: narzędzie `odpowiedz` z argumentami w schemacie analizy (`category`, `priority`, `draft`, `needs_review`).
    AI SDK sprawdza je schematem Zod, potem `execute()` uruchamia **wspólny kod**:
    `validateAnalysis` → `buildChatReply`. `stopWhen` kończy pętlę, gdy ostatni krok to samo `odpowiedz` (bez innych narzędzi w tym kroku) (maks. `MAX_AGENT_STEPS` kroków, `lib/instructions.ts`; po limicie odpowiedź „Przerwałem po N krokach”).
@@ -87,9 +87,15 @@ Nad odpowiedzią czat pokazuje etykiety użytych narzędzi, pod odpowiedzią —
 | Etykieta | Narzędzie | Skąd dane |
 |---|---|---|
 | 🔎 wyszukiwanie | `wyszukajWInternecie` – osobne wywołanie modelu z `openrouter.tools.webSearch` (`engine: "native"` = Google, 3 wyniki); zwraca streszczenie + źródła, serwer wysyła je jako listę „Źródła” | wyszukiwarka Google po stronie OpenRoutera |
-| 🕒 aktualnyCzas | `aktualnyCzas` — data, dzień tygodnia, godzina (Europe/Warsaw) | zegar serwera |
 | 🌤️ pogoda | `pogoda` — miasto, opcjonalnie data i godzina | Open-Meteo (geocoding + forecast) |
-| 💱 kursWaluty | `kursWaluty` — kod lub polska nazwa waluty → kurs średni vs PLN | NBP (tabele A i B) |
+| 💱 waluty | `waluty` — kod lub polska nazwa waluty → kurs średni vs PLN, opcjonalnie przeliczenie kwoty (naPLN / zPLN) | NBP (tabele A i B) |
+| 🎉 święta | `swieta` — kraj (nazwa lub kod), rok, opcjonalnie miesiąc → dni wolne od pracy | Nager.Date |
+| 📖 Wikipedia | `wikipedia` — hasło → streszczenie i link | polska Wikipedia (REST summary + wyszukiwanie) |
+| 🧮 kalkulator | `kalkulator` — działanie + liczby jako osobne argumenty (bez wykonywania kodu), także suma iloczynów | – |
+| 🕒 czas | `czas` — data, dzień tygodnia, godzina w strefie IANA (domyślnie Europe/Warsaw), różnica vs Polska | zegar serwera |
+| 🌍 strefa czasowa | `strefaCzasowa` — miasto i/lub kraj → strefa IANA, godzina na miejscu | Open-Meteo (geocoding, dla kraju forecast `timezone=auto`) |
+| 📝 notatki | `notatki` — zapisz / pokaż (pamięć serwera, znika po restarcie) | – |
+| 🩺 diagnostyka | `diagnostyka` — model, lista narzędzi, limit kroków, zmienne środowiskowe tylko tak/nie | – |
 | 🦎🪙 kursKrypto | `kursKrypto` — symbol, nazwa lub id kryptowaluty → cena w PLN i USD, zmiana 24 h | CoinGecko (publiczne API bez klucza; opcjonalnie `COINGECKO_DEMO_API_KEY`) |
 | 🎨 generowanie obrazu | `generujObraz` — opis (≤ 500 znaków) → obraz w czacie; model dostaje tylko „obraz wygenerowany” (`toModelOutput`); maks. 1 obraz na odpowiedź | `OPENROUTER_IMAGE_MODEL` (wspólne `lib/image-gen.ts`) |
 
