@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   }
 
   const mode = (body as { mode?: unknown } | null)?.mode;
-  if (mode === "chat") return handleChat(body, authConfig);
+  if (mode === "chat") return handleChat(body, authConfig, req.signal);
   if (mode === "analyze") return handleAnalyze(body);
   return Response.json(
     { ok: false, kind: "input", message: 'Nieznany tryb. Dozwolone: "chat" albo "analyze".' },

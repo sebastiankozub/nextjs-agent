@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ModelMessage, UIMessage } from "ai";
+import { getToolName, isToolUIPart, type ModelMessage, type UIMessage } from "ai";
 
 // Schemat wyniku analizy (W2). strictObject = dodatkowe pola są odrzucane
 // (odpowiednik "additionalProperties": false).
@@ -344,3 +344,60 @@ export function buildPartialReply(
   if (found.length === 0) return `${header} Nie zdążyłem niczego ustalić. ${next}`;
   return `${header} Do tej pory ustaliłem:\n${found.join("\n")}\n\nNie zdążyłem dokończyć zadania. ${next}`;
 }
+
+// --- „Stop”: wynik częściowy składany w przeglądarce (serwer po zerwaniu połączenia już nic nie wyśle) ---
+
+export const INTERRUPTED_NOTE = "Przerwane przez użytkownika.";
+
+/** Co agent zdążył zrobić: wyniki narzędzi z numerem kroku (jak „Zatrzymałem się…” po limicie). */
+export function partialFromParts(message: UIMessage): string[] {
+  const lines: string[] = [];
+  let step = 0;
+  for (const part of message.parts) {
+    if (part.type === "step-start") step++;
+    if (!isToolUIPart(part)) continue;
+    const name = getToolName(part);
+    const nr = Math.max(step, 1);
+    if (part.state === "output-available") {
+      const opis = name === "generujObraz" ? "obraz wygenerowany (powyżej)" : describeToolOutput(part.output);
+      lines.push(`${nr}. ${name}: ${opis.length > 300 ? `${opis.slice(0, 300)}…` : opis}`);
+    } else if (part.state === "output-error") {
+      lines.push(`${nr}. ${name}: błąd`);
+    } else {
+      lines.push(`${nr}. ${name}: przerwane w trakcie`);
+    }
+  }
+  return lines;
+}
+
+/** Dopisuje do ostatniej odpowiedzi agenta wynik częściowy i „Przerwane przez użytkownika”. */
+export function markInterrupted(messages: UIMessage[]): UIMessage[] {
+  const last = messages[messages.length - 1];
+  // Agent nie zdążył nic wysłać – dokładamy nową wiadomość z samą informacją.
+  if (!last || last.role !== "assistant") {
+    return [
+      ...messages,
+      {
+        id: `interrupted-${Date.now()}`,
+        role: "assistant",
+        parts: [{ type: "text", text: INTERRUPTED_NOTE }],
+        metadata: { interrupted: true },
+      },
+    ];
+  }
+  // Odpowiedź zdążyła przyjść w całości – nic nie dopisujemy.
+  if (last.parts.some((p) => p.type === "text" && p.text.trim())) return messages;
+  const found = partialFromParts(last);
+  const text = found.length
+    ? `${INTERRUPTED_NOTE} Do tej pory zrobiłem:\n${found.join("\n")}`
+    : `${INTERRUPTED_NOTE} Nie zdążyłem niczego ustalić.`;
+  return [
+    ...messages.slice(0, -1),
+    {
+      ...last,
+      parts: [...last.parts, { type: "text", text }],
+      metadata: { ...(last.metadata as object | undefined), interrupted: true },
+    },
+  ];
+}
+

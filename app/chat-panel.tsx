@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
+import { markInterrupted } from "../lib/analysis";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 // Podpowiedzi opisów obrazu w temacie Studio Nova (klik = wstawienie do pola wiadomości).
@@ -54,7 +55,7 @@ export default function ChatPanel({
   // Błędy przypięte do konkretnej wiadomości (id wiadomości użytkownika -> treść błędu).
   const [messageErrors, setMessageErrors] = useState<Record<string, string>>({});
   const messagesRef = useRef<UIMessage[]>([]);
-  const { messages, sendMessage, setMessages, status, clearError } = useChat({
+  const { messages, sendMessage, setMessages, status, clearError, stop } = useChat({
     id,
     transport,
     onError: (err) => {
@@ -84,6 +85,20 @@ export default function ChatPanel({
     appliedContinuation.current = last.id;
     setInput((current) => (current.trim() ? current : continuation));
   }, [status, messages]);
+
+  // „Stop”: przerywa zadanie agenta. Po zatrzymaniu (status wraca do "ready") dopisujemy do rozmowy
+  // to, co agent zdążył zrobić, i „Przerwane przez użytkownika”.
+  const agentWorking = status === "submitted" || status === "streaming";
+  const stopRequested = useRef(false);
+  function handleStop() {
+    stopRequested.current = true;
+    stop();
+  }
+  useEffect(() => {
+    if (status === "submitted" || status === "streaming" || !stopRequested.current) return;
+    stopRequested.current = false;
+    setMessages((current) => markInterrupted(current));
+  }, [status, setMessages]);
 
   const busy = status === "submitted" || status === "streaming" || generating;
   const canSend = (input.trim() !== "" || image !== null) && !busy;
@@ -295,9 +310,15 @@ export default function ChatPanel({
           disabled={busy}
           autoComplete="off"
         />
-        <button type="submit" disabled={!canSend}>
-          {busy ? "Czekaj…" : "Wyślij"}
-        </button>
+        {agentWorking ? (
+          <button type="button" className="stop" onClick={handleStop} title="Przerwij pracę agenta">
+            ■ Stop
+          </button>
+        ) : (
+          <button type="submit" disabled={!canSend}>
+            {busy ? "Czekaj…" : "Wyślij"}
+          </button>
+        )}
         {allowImages && (
           <button
             type="button"

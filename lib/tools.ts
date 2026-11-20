@@ -5,7 +5,7 @@ import { AGENT_LIMITS } from "./instructions";
 // ---------- Wspólne pomocnicze ----------
 
 const TIMEZONE = "Europe/Warsaw";
-// Ile czekamy na odpowiedź API (AGENT_TOOL_TIMEOUT_SECONDS, domyślnie 10 s).
+// Ile czeka jedna próba zapytania do API (AGENT_TOOL_TIMEOUT_SECONDS, domyślnie 6 s).
 const TIMEOUT_MS = AGENT_LIMITS.toolTimeoutMs;
 
 function teraz() {
@@ -13,29 +13,40 @@ function teraz() {
 }
 
 // Pobiera JSON z publicznego API. Nie rzuca wyjątków – zwraca { ok, ... }.
+// Jedna próba czeka najwyżej TIMEOUT_MS. Po błędzie sieci, przekroczonym czasie albo 5xx/429
+// ponawiamy (AGENT_TOOL_RETRIES, domyślnie 1 raz) po krótkiej przerwie. 4xx (np. 404) – bez ponawiania.
+const RETRY_PAUSE_MS = 500;
+
 async function getJson(
   url: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<{ ok: true; data: any } | { ok: false; status?: number; reason?: string }> {
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { accept: "application/json", ...extraHeaders },
-      cache: "no-store",
-    });
-    if (res.status === 204) return { ok: true, data: null };
-    if (!res.ok) {
+  let last: { ok: false; status?: number; reason?: string } = { ok: false };
+  for (let attempt = 0; attempt <= AGENT_LIMITS.toolRetries; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS));
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        headers: { accept: "application/json", ...extraHeaders },
+        cache: "no-store",
+      });
+      if (res.status === 204) return { ok: true, data: null };
+      if (res.ok) return { ok: true, data: await res.json() };
       let reason: string | undefined;
       try {
         reason = (await res.json())?.reason;
       } catch {}
-      return { ok: false, status: res.status, reason };
+      last = { ok: false, status: res.status, reason };
+      const retryable = res.status >= 500 || res.status === 429;
+      console.error(`[tools] fetch ${url} → HTTP ${res.status} (próba ${attempt + 1})`);
+      if (!retryable) return last;
+    } catch (error) {
+      const name = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      console.error(`[tools] fetch ${url} → ${name} (próba ${attempt + 1})`);
+      last = { ok: false };
     }
-    return { ok: true, data: await res.json() };
-  } catch (error) {
-    console.error("[tools] fetch", url, error);
-    return { ok: false };
   }
+  return last;
 }
 
 // ---------- Pogoda (Open-Meteo) ----------
@@ -177,7 +188,28 @@ const NBP = "https://api.nbp.pl/api/exchangerates";
 type NbpRate = { currency: string; code: string; mid: number };
 type Kurs = { waluta: string; kod: string; mid: number; tabela: string; dataPublikacji: string };
 
-async function znajdzKursNbp(waluta: string): Promise<{ ok: true; kurs: Kurs } | { ok: false; blad: string }> {
+// Pamięć kursów NBP (AGENT_NBP_CACHE_MINUTES). NBP publikuje kurs średni raz dziennie, więc kurs sprzed
+// kilkudziesięciu minut to wciąż ten sam prawdziwy kurs. Zapamiętujemy też, KIEDY pobrano go z NBP.
+const nbpCache = new Map<string, { kurs: Kurs; pobranoISO: string; wygasa: number }>();
+
+async function znajdzKursNbp(
+  waluta: string,
+): Promise<{ ok: true; kurs: Kurs; zPamieciISO?: string } | { ok: false; blad: string }> {
+  const klucz = waluta.trim().toLowerCase();
+  const zapamietany = nbpCache.get(klucz);
+  if (zapamietany && zapamietany.wygasa > Date.now()) {
+    return { ok: true, kurs: zapamietany.kurs, zPamieciISO: zapamietany.pobranoISO };
+  }
+  const wynik = await znajdzKursNbpBezPamieci(waluta);
+  if (wynik.ok && AGENT_LIMITS.nbpCacheMs > 0) {
+    const wpis = { kurs: wynik.kurs, pobranoISO: new Date().toISOString(), wygasa: Date.now() + AGENT_LIMITS.nbpCacheMs };
+    nbpCache.set(klucz, wpis);
+    nbpCache.set(wynik.kurs.kod.toLowerCase(), wpis);
+  }
+  return wynik;
+}
+
+async function znajdzKursNbpBezPamieci(waluta: string): Promise<{ ok: true; kurs: Kurs } | { ok: false; blad: string }> {
   const input = waluta.trim();
   const NIE_ODPOWIADA = "Serwis NBP nie odpowiada. Spróbuj za chwilę.";
 
@@ -199,7 +231,12 @@ async function znajdzKursNbp(waluta: string): Promise<{ ok: true; kurs: Kurs } |
           },
         };
       }
-      if (!res.ok && res.status !== 404) serwisNieOdpowiada = true;
+      // Tabela B ma sens tylko, gdy w A nie ma waluty (404). Błąd serwera = NBP nie odpowiada –
+      // nie czekamy na drugie, też nieudane zapytanie.
+      if (!res.ok && res.status !== 404) {
+        serwisNieOdpowiada = true;
+        break;
+      }
     }
     if (serwisNieOdpowiada) return { ok: false, blad: NIE_ODPOWIADA };
     // 404 – może to nazwa (np. „jen”), szukamy dalej po nazwie.
@@ -263,6 +300,14 @@ export const waluty = tool({
       opis: `1 ${kurs.kod} = ${kurs.mid} PLN (kurs średni NBP)`,
       tabela: kurs.tabela,
       dataPublikacji: kurs.dataPublikacji,
+      // Kurs z pamięci podręcznej: kiedy naprawdę pobrano go z NBP.
+      ...(found.zPamieciISO
+        ? {
+            zPamieci: true,
+            pobranoZNbpISO: found.zPamieciISO,
+            uwaga: `Kurs z pamięci podręcznej – pobrany z NBP ${new Date(found.zPamieciISO).toLocaleString("pl-PL", { timeZone: TIMEZONE })}.`,
+          }
+        : {}),
     };
 
     if (kwota !== undefined) {
@@ -488,6 +533,18 @@ async function ustalStrefe(miasto?: string, kraj?: string): Promise<Strefa> {
     timeZone,
     tylkoKraj: !miasto || panstwo,
   };
+}
+
+/** Miasto -> kraj (kod ISO) i strefa – dla asystenta podróży (/dashboard). Geokodowanie Open-Meteo. */
+export async function znajdzMiejsce(
+  miasto: string,
+): Promise<{ ok: true; nazwa: string; kraj: string; kodKraju: string; timeZone: string | null } | { ok: false; blad: string }> {
+  const geo = await getJson(`${GEOCODING}?name=${encodeURIComponent(miasto.trim())}&count=1&language=pl&format=json`);
+  if (!geo.ok) return { ok: false, blad: "Serwis geokodowania (Open-Meteo) nie odpowiada. Spróbuj za chwilę." };
+  const m = geo.data?.results?.[0];
+  if (!m?.country_code) return { ok: false, blad: `Nie znalazłem miejscowości „${miasto}”.` };
+  const kod = String(m.country_code).toUpperCase();
+  return { ok: true, nazwa: m.name, kraj: m.country ?? nazwyKrajow.of(kod) ?? kod, kodKraju: kod, timeZone: m.timezone ?? null };
 }
 
 const UWAGA_KRAJ = "Strefa dla środka kraju. Duże kraje (np. USA, Rosja, Brazylia, Australia) mają kilka stref – podaj miasto.";

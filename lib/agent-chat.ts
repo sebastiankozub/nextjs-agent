@@ -108,7 +108,12 @@ function isHidden(chunk: UIMessageChunk, answerCallIds: Set<string>): boolean {
  * Tryb "chat" endpointu /api/agent. Sesję sprawdza endpoint przed wywołaniem.
  * body: { messages: UIMessage[] } (z useChat).
  */
-export async function handleChat(body: unknown, authConfig: AuthConfig): Promise<Response> {
+export async function handleChat(
+  body: unknown,
+  authConfig: AuthConfig,
+  // Sygnał zapytania HTTP: przycisk „Stop” w przeglądarce zrywa połączenie → przerywamy model i narzędzia.
+  requestSignal?: AbortSignal,
+): Promise<Response> {
   const config = getOpenRouterConfig();
   if (!config.ok) return textError(config.message, 500);
   const { apiKey, modelId } = config;
@@ -145,6 +150,13 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
       // Twardy limit czasu całego zadania – przerywa wywołanie modelu.
       const abort = new AbortController();
       const deadlineTimer = setTimeout(() => abort.abort(), limits.maxTaskMs);
+      // Użytkownik kliknął „Stop” (połączenie zerwane) – dalsza praca nie ma sensu, nikt jej nie zobaczy.
+      const stoppedByUser = () => requestSignal?.aborted === true;
+      if (requestSignal) {
+        requestSignal.addEventListener("abort", () => console.info("[api/agent] przerwane przez użytkownika"), {
+          once: true,
+        });
+      }
 
       /**
        * Strażnik każdego narzędzia (oprócz „odpowiedz”): limit wywołań, brak powtórek nieudanych wywołań,
@@ -154,6 +166,7 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
         (name: string, execute: (input: unknown, options: unknown) => unknown) =>
         async (input: unknown, options: unknown) => {
           const key = `${name}:${JSON.stringify(input)}`;
+          if (stoppedByUser()) return { blad: "Przerwane przez użytkownika." };
           if (calls.length >= limits.maxToolCalls) {
             return { blad: `Wykorzystano limit ${limits.maxToolCalls} wywołań narzędzi – nie wywołano ${name}.` };
           }
@@ -162,7 +175,9 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
           }
           const remaining = limits.maxTaskMs - elapsed();
           if (remaining < 1000) return { blad: "Brak czasu na kolejne narzędzie." };
-          const timeoutMs = Math.min(SLOW_TOOLS.has(name) ? limits.slowToolTimeoutMs : limits.toolTimeoutMs, remaining);
+          // Narzędzie z danymi: wszystkie próby zapytania do API (czas próby × (1 + ponowienia) + przerwy).
+          const dataToolMs = limits.toolTimeoutMs * (limits.toolRetries + 1) + 500 * limits.toolRetries;
+          const timeoutMs = Math.min(SLOW_TOOLS.has(name) ? limits.slowToolTimeoutMs : dataToolMs, remaining);
           const started = Date.now();
           const record = (output: unknown) => {
             calls.push({ step: currentStep, toolName: name, key, output, ms: Date.now() - started, ok: !hasError(output) });
@@ -197,7 +212,7 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
         model: openrouter(modelId),
         instructions: CHAT_AGENT_INSTRUCTIONS,
         messages: converted.messages,
-        abortSignal: abort.signal,
+        abortSignal: requestSignal ? AbortSignal.any([abort.signal, requestSignal]) : abort.signal,
         tools: (() => {
           const tools = {
           // Wyszukiwanie Google jako NASZE narzędzie: osobne krótkie wywołanie modelu z wyszukiwarką
@@ -320,11 +335,16 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
           };
           toolNames = Object.keys(tools);
           // Każde narzędzie z danymi idzie przez strażnika (limity, timeout, pomiar czasu).
-          for (const [name, t] of Object.entries(tools)) {
-            const withExecute = t as { execute?: (input: unknown, options: unknown) => unknown };
-            if (name !== ANSWER_TOOL && withExecute.execute) withExecute.execute = guard(name, withExecute.execute);
-          }
-          return tools;
+          // UWAGA: tworzymy KOPIE narzędzi. Obiekty z lib/tools.ts są wspólne (także dla /dashboard
+          // i kolejnych zapytań czatu) – podmiana execute w oryginale „przyklejała” strażnika
+          // jednego zadania na stałe (po jego limicie czasu wszystko zwracało „Brak czasu…”).
+          const guarded = Object.fromEntries(
+            Object.entries(tools).map(([name, t]) => {
+              const execute = (t as { execute?: (input: unknown, options: unknown) => unknown }).execute;
+              return [name, name !== ANSWER_TOOL && execute ? { ...t, execute: guard(name, execute) } : t];
+            }),
+          ) as typeof tools;
+          return guarded;
         })(),
         // Model musi w każdym kroku wywołać narzędzie – nie ma drogi „zwykłym tekstem”.
         toolChoice: "required",
@@ -394,20 +414,23 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
             continue;
           }
           if (value.type === "error" || value.type === "abort") {
-            // Limit czasu to nie awaria – niżej składamy wynik częściowy.
-            if (abort.signal.aborted) continue;
+            // Limit czasu to nie awaria – niżej składamy wynik częściowy. „Stop” też nie.
+            if (abort.signal.aborted || stoppedByUser()) continue;
             failed = value.type === "error";
           }
           if (!isHidden(value, answerCallIds)) writer.write(value);
         }
       } catch (error) {
-        if (!abort.signal.aborted) throw error;
+        if (!abort.signal.aborted && !stoppedByUser()) throw error;
       } finally {
         clearTimeout(deadlineTimer);
       }
       const timedOut = abort.signal.aborted;
       // Krok przerwany limitem czasu też liczymy (do chwili przerwania).
       if (stepStartedAt !== null) stepMs.push(Date.now() - stepStartedAt);
+
+      // Po „Stop” przeglądarka już nie słucha – wynik częściowy składa sama (app/chat-panel.tsx).
+      if (stoppedByUser()) return;
 
       // Odpowiedź PO walidacji – składana przez serwer.
       if (!failed) {
