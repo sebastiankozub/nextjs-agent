@@ -94,6 +94,9 @@ Nad odpowiedzią czat pokazuje etykiety użytych narzędzi, pod odpowiedzią —
 | 🧮 kalkulator | `kalkulator` — działanie + liczby jako osobne argumenty (bez wykonywania kodu), także suma iloczynów | – |
 | 🕒 czas | `czas` — data, dzień tygodnia, godzina w strefie IANA (domyślnie Europe/Warsaw), różnica vs Polska | zegar serwera |
 | 🌍 strefa czasowa | `strefaCzasowa` — miasto i/lub kraj → strefa IANA, godzina na miejscu | Open-Meteo (geocoding, dla kraju forecast `timezone=auto`) |
+| 🌐 przeliczanie czasu | `przeliczCzas` — godzina lub przedział z miejsca A na czas lokalny w miejscach B…N (miasto, „miasto, kraj”, kraj, strefa IANA), z czasem letnim i zmianą dnia | Open-Meteo (geocoding) + baza stref IANA |
+| 📅 dni robocze | `dniRobocze` — data ± N dni roboczych albo liczba dni roboczych między datami (bez weekendów i świąt kraju) | Nager.Date |
+| 🏢 firma | `firma` — dane firmy po NIP / REGON / rachunku: nazwa, status VAT, adres, KRS | Biała lista podatników VAT (wl-api.mf.gov.pl) |
 | 📝 notatki | `notatki` — zapisz / pokaż (pamięć serwera, znika po restarcie) | – |
 | 🩺 diagnostyka | `diagnostyka` — model, lista narzędzi, limit kroków, zmienne środowiskowe tylko tak/nie | – |
 | 🦎🪙 kursKrypto | `kursKrypto` — symbol, nazwa lub id kryptowaluty → cena w PLN i USD, zmiana 24 h | CoinGecko (publiczne API bez klucza; opcjonalnie `COINGECKO_DEMO_API_KEY`) |

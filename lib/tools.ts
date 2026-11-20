@@ -433,6 +433,63 @@ export const czas = tool({
 
 const GEOCODING = "https://geocoding-api.open-meteo.com/v1/search";
 
+type Strefa =
+  | { ok: true; lokalizacja: string; timeZone: string; tylkoKraj: boolean }
+  | { ok: false; blad: string };
+
+// Miasto i/lub kraj -> strefa IANA (geokodowanie Open-Meteo). Wspólne dla strefaCzasowa i przeliczCzas.
+async function ustalStrefe(miasto?: string, kraj?: string): Promise<Strefa> {
+  const nazwa = (miasto ?? kraj ?? "").trim();
+  if (!nazwa) return { ok: false, blad: "Podaj miasto, kraj albo oba." };
+
+  const geo = await getJson(`${GEOCODING}?name=${encodeURIComponent(nazwa)}&count=10&language=pl&format=json`);
+  if (!geo.ok) return { ok: false, blad: "Serwis geokodowania (Open-Meteo) nie odpowiada. Spróbuj za chwilę." };
+
+  type Miejsce = {
+    name: string; latitude: number; longitude: number; feature_code?: string;
+    country?: string; country_code?: string; admin1?: string; timezone?: string | null;
+  };
+  let wyniki: Miejsce[] = geo.data?.results ?? [];
+
+  if (miasto && kraj) {
+    const k = kraj.trim().toLowerCase();
+    wyniki = wyniki.filter((r) => r.country_code?.toLowerCase() === k || r.country?.toLowerCase().includes(k));
+  } else if (!miasto) {
+    // Sam kraj: najpierw obiekt typu „państwo” (feature_code PCL…), jeśli jest.
+    wyniki = [...wyniki.filter((r) => r.feature_code?.startsWith("PCL")), ...wyniki];
+  }
+
+  const miejsce = wyniki[0];
+  if (!miejsce) {
+    return {
+      ok: false,
+      blad: miasto && kraj ? `Nie znalazłem miejscowości „${miasto}” w kraju „${kraj}”.` : `Nie znalazłem miejsca „${nazwa}”.`,
+    };
+  }
+
+  // Państwo (np. „Portugalia”) nie ma strefy w geokodowaniu – bierzemy ją z prognozy dla jego środka.
+  let timeZone = miejsce.timezone ?? null;
+  if (!timeZone) {
+    const f = await getJson(
+      `https://api.open-meteo.com/v1/forecast?latitude=${miejsce.latitude}&longitude=${miejsce.longitude}&timezone=auto&current=temperature_2m`,
+    );
+    timeZone = f.ok ? (f.data?.timezone ?? null) : null;
+  }
+  if (!timeZone || !poprawnaStrefa(timeZone)) {
+    return { ok: false, blad: `Nie udało się ustalić strefy czasowej dla „${nazwa}”.` };
+  }
+
+  const panstwo = miejsce.feature_code?.startsWith("PCL") ?? false;
+  return {
+    ok: true,
+    lokalizacja: [...new Set([miejsce.name, panstwo ? null : miejsce.admin1, panstwo ? null : miejsce.country].filter(Boolean))].join(", "),
+    timeZone,
+    tylkoKraj: !miasto || panstwo,
+  };
+}
+
+const UWAGA_KRAJ = "Strefa dla środka kraju. Duże kraje (np. USA, Rosja, Brazylia, Australia) mają kilka stref – podaj miasto.";
+
 export const strefaCzasowa = tool({
   description:
     "Ustala strefę czasową (IANA) dla miasta, kraju albo obu (dla precyzji, np. „Paryż” + „USA”) " +
@@ -441,72 +498,102 @@ export const strefaCzasowa = tool({
   inputSchema: z
     .object({
       miasto: z.string().min(2).max(80).optional().describe("Nazwa miasta, np. „Lizbona”"),
-      kraj: z
-        .string()
-        .min(2)
-        .max(80)
-        .optional()
-        .describe("Nazwa kraju po polsku albo kod ISO, np. „Portugalia” albo „PT”"),
+      kraj: z.string().min(2).max(80).optional().describe("Nazwa kraju po polsku albo kod ISO, np. „Portugalia” albo „PT”"),
     })
     .refine((v) => v.miasto || v.kraj, { message: "Podaj miasto, kraj albo oba." }),
   execute: async ({ miasto, kraj }) => {
     const pobrano = teraz();
-    const zrodlo = "Open-Meteo Geocoding (open-meteo.com)";
-    const nazwa = (miasto ?? kraj)!.trim();
-
-    const geo = await getJson(
-      `${GEOCODING}?name=${encodeURIComponent(nazwa)}&count=10&language=pl&format=json`,
-    );
-    if (!geo.ok) return { blad: "Serwis geokodowania (Open-Meteo) nie odpowiada. Spróbuj za chwilę.", pobrano };
-
-    type Miejsce = {
-      name: string; latitude: number; longitude: number; feature_code?: string;
-      country?: string; country_code?: string; admin1?: string; timezone?: string | null;
-    };
-    let wyniki: Miejsce[] = geo.data?.results ?? [];
-
-    if (miasto && kraj) {
-      const k = kraj.trim().toLowerCase();
-      wyniki = wyniki.filter(
-        (r) => r.country_code?.toLowerCase() === k || r.country?.toLowerCase().includes(k),
-      );
-    } else if (!miasto) {
-      // Sam kraj: wybieramy obiekt typu „państwo” (feature_code PCL…), jeśli jest.
-      wyniki = [...wyniki.filter((r) => r.feature_code?.startsWith("PCL")), ...wyniki];
-    }
-
-    const miejsce = wyniki[0];
-    if (!miejsce) {
-      return {
-        blad: miasto && kraj
-          ? `Nie znalazłem miejscowości „${miasto}” w kraju „${kraj}”.`
-          : `Nie znalazłem miejsca „${nazwa}”.`,
-        pobrano,
-      };
-    }
-
-    // Kraj (np. „Portugalia”) nie ma strefy w geokodowaniu – bierzemy ją z prognozy dla jego środka.
-    let timeZone = miejsce.timezone ?? null;
-    if (!timeZone) {
-      const f = await getJson(
-        `https://api.open-meteo.com/v1/forecast?latitude=${miejsce.latitude}&longitude=${miejsce.longitude}&timezone=auto&current=temperature_2m`,
-      );
-      timeZone = f.ok ? (f.data?.timezone ?? null) : null;
-    }
-    if (!timeZone || !poprawnaStrefa(timeZone)) {
-      return { blad: `Nie udało się ustalić strefy czasowej dla „${nazwa}”.`, pobrano };
-    }
-
-    const lokalizacja = [miejsce.name, miejsce.admin1, miejsce.feature_code?.startsWith("PCL") ? null : miejsce.country]
-      .filter(Boolean)
-      .join(", ");
+    const s = await ustalStrefe(miasto, kraj);
+    if (!s.ok) return { blad: s.blad, pobrano };
     return {
-      lokalizacja,
-      ...czasWStrefie(timeZone),
-      ...(!miasto
-        ? { uwaga: "Strefa dla środka kraju. Duże kraje (np. USA, Rosja, Brazylia, Australia) mają kilka stref – podaj miasto." }
-        : {}),
-      zrodlo,
+      lokalizacja: s.lokalizacja,
+      ...czasWStrefie(s.timeZone),
+      ...(s.tylkoKraj ? { uwaga: UWAGA_KRAJ } : {}),
+      zrodlo: "Open-Meteo Geocoding (open-meteo.com)",
+      pobrano,
+    };
+  },
+});
+
+// ---------- Przeliczanie czasu między miejscami ----------
+
+// Lokalny czas „ścienny” w strefie -> chwila w UTC (dwie iteracje wystarczą także przy zmianie czasu).
+function lokalnyNaUTC(data: string, godzina: string, timeZone: string): Date {
+  const [y, mo, d] = data.split("-").map(Number);
+  const [h, mi] = godzina.split(":").map(Number);
+  const naiwny = Date.UTC(y, mo - 1, d, h, mi);
+  let t = naiwny - offsetMinut(timeZone, new Date(naiwny)) * 60000;
+  t = naiwny - offsetMinut(timeZone, new Date(t)) * 60000;
+  return new Date(t);
+}
+
+function wStrefie(chwila: Date, timeZone: string) {
+  return {
+    data: new Intl.DateTimeFormat("sv-SE", { timeZone }).format(chwila),
+    dzienTygodnia: new Intl.DateTimeFormat("pl-PL", { timeZone, weekday: "long" }).format(chwila),
+    godzina: new Intl.DateTimeFormat("pl-PL", { timeZone, hour: "2-digit", minute: "2-digit" }).format(chwila),
+  };
+}
+
+// Miejsce: strefa IANA („Europe/Lisbon”), „miasto, kraj” albo sama nazwa miasta/kraju.
+async function ustalMiejsce(miejsce: string): Promise<Strefa> {
+  const m = miejsce.trim();
+  if (m.includes("/") && poprawnaStrefa(m)) return { ok: true, lokalizacja: m, timeZone: m, tylkoKraj: false };
+  if (/^polska$|^pl$/i.test(m)) return { ok: true, lokalizacja: "Polska", timeZone: TIMEZONE, tylkoKraj: false };
+  const [miasto, kraj] = m.split(",").map((x) => x.trim());
+  return ustalStrefe(miasto, kraj || undefined);
+}
+
+export const przeliczCzas = tool({
+  description:
+    "Przelicza godzinę albo przedział godzin z jednego miejsca na czas lokalny w innych miejscach " +
+    "(np. spotkanie, połączenie, start transmisji, odlot/przylot, godziny otwarcia). " +
+    "Miejsca: miasto („Nowy Jork”), „miasto, kraj” („Paryż, USA”), kraj albo strefa IANA (America/New_York). " +
+    "Uwzględnia zmianę czasu letniego dla podanej daty i zmianę dnia. Domyślnie źródłem jest Polska i dzisiejsza data – " +
+    "dla innej daty („jutro”) najpierw ustal ją narzędziem czas.",
+  inputSchema: z.object({
+    godzina: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).describe("Godzina początkowa GG:MM, np. 15:00"),
+    godzinaDo: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().describe("Koniec przedziału GG:MM (opcjonalnie)"),
+    data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Data RRRR-MM-DD w miejscu źródłowym; domyślnie dziś"),
+    z: z.string().min(2).max(80).optional().describe("Miejsce źródłowe; domyślnie Polska"),
+    na: z.array(z.string().min(2).max(80)).min(1).max(8).describe("Miejsca docelowe, np. [„Nowy Jork”, „Tokio”]"),
+  }),
+  execute: async ({ godzina, godzinaDo, data, z: skad = "Polska", na }) => {
+    const pobrano = teraz();
+    const zrodlo = await ustalMiejsce(skad);
+    if (!zrodlo.ok) return { blad: zrodlo.blad, pobrano };
+
+    const dzien = data ?? new Intl.DateTimeFormat("sv-SE", { timeZone: zrodlo.timeZone }).format(new Date());
+    const start = lokalnyNaUTC(dzien, godzina, zrodlo.timeZone);
+    let koniec: Date | null = null;
+    if (godzinaDo) {
+      koniec = lokalnyNaUTC(dzien, godzinaDo, zrodlo.timeZone);
+      if (koniec <= start) koniec = new Date(koniec.getTime() + 24 * 3600 * 1000); // przedział przez północ
+    }
+
+    const cele = await Promise.all(
+      na.map(async (miejsce) => {
+        const s = await ustalMiejsce(miejsce);
+        if (!s.ok) return { miejsce, blad: s.blad };
+        const a = wStrefie(start, s.timeZone);
+        const b = koniec ? wStrefie(koniec, s.timeZone) : null;
+        return {
+          miejsce: s.lokalizacja,
+          strefa: s.timeZone,
+          od: a,
+          ...(b ? { do: b } : {}),
+          zapis: b
+            ? `${a.godzina}–${b.godzina}${b.data !== a.data ? ` (do ${b.data})` : ""}, ${a.dzienTygodnia} ${a.data}`
+            : `${a.godzina}, ${a.dzienTygodnia} ${a.data}`,
+          ...(s.tylkoKraj ? { uwaga: UWAGA_KRAJ } : {}),
+        };
+      }),
+    );
+
+    return {
+      zrodlo: { miejsce: zrodlo.lokalizacja, strefa: zrodlo.timeZone, data: dzien, godzina, ...(godzinaDo ? { godzinaDo } : {}) },
+      wyniki: cele,
+      dane: "Open-Meteo Geocoding (open-meteo.com) + baza stref IANA",
       pobrano,
     };
   },
@@ -588,6 +675,203 @@ export const swieta = tool({
       ...(lista.length === 0 ? { uwaga: "Brak dni wolnych w podanym okresie." } : {}),
       zrodlo,
       pobrano,
+    };
+  },
+});
+
+// ---------- Dni robocze (weekendy + święta z Nager.Date) ----------
+
+// Ogólnokrajowe dni wolne od pracy w danym roku: mapa „RRRR-MM-DD” -> nazwa.
+async function swietaWRoku(kod: string, rok: number): Promise<{ ok: true; mapa: Map<string, string> } | { ok: false; blad: string }> {
+  const res = await getJson(`${NAGER}/PublicHolidays/${rok}/${kod}`);
+  if (!res.ok) {
+    return {
+      ok: false,
+      blad: res.status === 404 ? `Nager.Date nie zna kraju o kodzie ${kod}.` : "Serwis świąt (Nager.Date) nie odpowiada. Spróbuj za chwilę.",
+    };
+  }
+  type S = { date: string; localName: string; global: boolean; types?: string[] };
+  const mapa = new Map<string, string>();
+  for (const s of (res.data ?? []) as S[]) {
+    if (s.global && (!s.types || s.types.includes("Public"))) mapa.set(s.date, s.localName);
+  }
+  return { ok: true, mapa };
+}
+
+const dodajDni = (iso: string, n: number) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const dzienTyg = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("pl-PL", { weekday: "long", timeZone: "UTC" });
+const weekend = (iso: string) => [0, 6].includes(new Date(`${iso}T12:00:00Z`).getUTCDay());
+
+export const dniRobocze = tool({
+  description:
+    "Liczy na dniach roboczych (bez sobót, niedziel i ogólnokrajowych świąt danego kraju; dane świąt: Nager.Date). " +
+    "Tryb 1: data ± N dni roboczych (podaj od i dni, np. termin płatności, realizacji, odpowiedzi, dostawy; ujemne dni = wstecz). " +
+    "Tryb 2: ile dni roboczych jest między datami (podaj od i do; liczone włącznie z obiema datami). " +
+    "Domyślnie Polska. Gdy użytkownik mówi „dziś”, „od poniedziałku”, najpierw ustal datę narzędziem czas.",
+  inputSchema: z
+    .object({
+      od: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("Data początkowa RRRR-MM-DD"),
+      dni: z.number().int().min(-366).max(366).optional().describe("Tryb 1: ile dni roboczych dodać (ujemne = odjąć)"),
+      do: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Tryb 2: data końcowa RRRR-MM-DD"),
+      kraj: z.string().min(2).max(60).optional().describe("Kraj (nazwa po polsku albo kod ISO); domyślnie Polska"),
+    })
+    .refine((v) => (v.dni === undefined) !== (v.do === undefined), {
+      message: "Podaj albo liczbę dni (dni), albo datę końcową (do).",
+    }),
+  execute: async ({ od, dni, do: doDaty, kraj = "PL" }) => {
+    const pobrano = teraz();
+    const zrodlo = "Nager.Date (date.nager.at) – święta ogólnokrajowe";
+    if (Number.isNaN(Date.parse(`${od}T12:00:00Z`)) || (doDaty && Number.isNaN(Date.parse(`${doDaty}T12:00:00Z`)))) {
+      return { blad: "Nieprawidłowa data – użyj formatu RRRR-MM-DD.", pobrano };
+    }
+
+    const kod = await kodKraju(kraj);
+    if (!kod.ok) return { blad: kod.blad, pobrano };
+
+    // Święta pobieramy dla każdego roku, który obejmuje zakres (wczytywane leniwie).
+    const lata = new Map<number, Map<string, string>>();
+    const swieto = async (iso: string): Promise<string | null | { blad: string }> => {
+      const rok = Number(iso.slice(0, 4));
+      if (!lata.has(rok)) {
+        const r = await swietaWRoku(kod.kod, rok);
+        if (!r.ok) return { blad: r.blad };
+        lata.set(rok, r.mapa);
+      }
+      return lata.get(rok)!.get(iso) ?? null;
+    };
+
+    const pominieteSwieta: { data: string; nazwa: string }[] = [];
+    let weekendy = 0;
+    const roboczy = async (iso: string): Promise<boolean | { blad: string }> => {
+      if (weekend(iso)) { weekendy++; return false; }
+      const s = await swieto(iso);
+      if (s && typeof s === "object") return s;
+      if (s) { pominieteSwieta.push({ data: iso, nazwa: s }); return false; }
+      return true;
+    };
+
+    const kraju = nazwyKrajow.of(kod.kod) ?? kod.kod;
+
+    if (dni !== undefined) {
+      // Tryb 1: liczymy od dnia następnego (poprzedniego) po dacie „od”.
+      const krok = dni >= 0 ? 1 : -1;
+      let data = od;
+      let zostalo = Math.abs(dni);
+      while (zostalo > 0) {
+        data = dodajDni(data, krok);
+        const r = await roboczy(data);
+        if (typeof r === "object") return { blad: r.blad, pobrano };
+        if (r) zostalo--;
+      }
+      return {
+        tryb: "data ± dni robocze",
+        kraj: kraju,
+        od, odDzien: dzienTyg(od),
+        dniRobocze: dni,
+        wynik: data, wynikDzien: dzienTyg(data),
+        pominieteWeekendy: weekendy,
+        pominieteSwieta,
+        zrodlo, pobrano,
+      };
+    }
+
+    // Tryb 2: zliczanie w przedziale [od, do] włącznie.
+    let [a, b] = [od, doDaty!];
+    const odwrotnie = a > b;
+    if (odwrotnie) [a, b] = [b, a];
+    if ((Date.parse(b) - Date.parse(a)) / 86400000 > 3660) return { blad: "Zakres może mieć najwyżej 10 lat.", pobrano };
+    let licznik = 0;
+    for (let d = a; d <= b; d = dodajDni(d, 1)) {
+      const r = await roboczy(d);
+      if (typeof r === "object") return { blad: r.blad, pobrano };
+      if (r) licznik++;
+    }
+    return {
+      tryb: "liczba dni roboczych (włącznie z obiema datami)",
+      kraj: kraju,
+      od: a, do: b,
+      dniRobocze: licznik,
+      dniKalendarzowe: (Date.parse(b) - Date.parse(a)) / 86400000 + 1,
+      weekendy,
+      swieta: pominieteSwieta,
+      zrodlo, pobrano,
+    };
+  },
+});
+
+// ---------- Firma (Biała lista podatników VAT, Ministerstwo Finansów) ----------
+// Dokumentacja: https://wl-api.mf.gov.pl/ – /api/search/{nip|regon|bank-account}/{wartość}?date=RRRR-MM-DD
+// → { result: { subject: { name, nip, regon, krs, statusVat, residenceAddress, workingAddress,
+//   accountNumbers, registrationLegalDate, … } | null, requestDateTime, requestId } }.
+// Błędy: 400 { code: "WL-1xx", message } (np. zły NIP). API ma dzienny limit zapytań (429 po przekroczeniu).
+
+const MF = "https://wl-api.mf.gov.pl/api/search";
+const tylkoCyfry = (s: string) => s.replace(/[\s-]/g, "").replace(/^PL/i, "");
+
+function poprawnyNip(nip: string) {
+  if (!/^\d{10}$/.test(nip)) return false;
+  const w = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+  const suma = w.reduce((s, x, i) => s + x * Number(nip[i]), 0);
+  return suma % 11 === Number(nip[9]);
+}
+
+export const firma = tool({
+  description:
+    "Dane firmy z oficjalnej Białej listy podatników VAT (Ministerstwo Finansów): nazwa, NIP, REGON, KRS, status VAT, " +
+    "adres i liczba rachunków na liście. Wyszukiwanie po NIP, REGON albo numerze rachunku bankowego (26 cyfr). " +
+    "Użyj, gdy trzeba sprawdzić kontrahenta, klienta, dostawcę albo numer konta przed przelewem. Działa tylko dla firm z Polski.",
+  inputSchema: z.object({
+    szukaj: z.enum(["nip", "regon", "rachunek"]).describe("Po czym szukać"),
+    wartosc: z.string().min(9).max(40).describe("NIP (10 cyfr), REGON (9 lub 14 cyfr) albo rachunek (26 cyfr); spacje i myślniki dozwolone"),
+  }),
+  execute: async ({ szukaj, wartosc }) => {
+    const pobrano = teraz();
+    const zrodlo = "Biała lista podatników VAT, Ministerstwo Finansów (wl-api.mf.gov.pl)";
+    const v = tylkoCyfry(wartosc);
+
+    if (szukaj === "nip" && !poprawnyNip(v)) return { blad: `„${wartosc}” to nie jest poprawny NIP (10 cyfr z prawidłową sumą kontrolną).`, pobrano };
+    if (szukaj === "regon" && !/^(\d{9}|\d{14})$/.test(v)) return { blad: "REGON musi mieć 9 albo 14 cyfr.", pobrano };
+    if (szukaj === "rachunek" && !/^\d{26}$/.test(v)) return { blad: "Numer rachunku musi mieć 26 cyfr (polski NRB).", pobrano };
+
+    const dzis = new Intl.DateTimeFormat("sv-SE", { timeZone: TIMEZONE }).format(new Date());
+    const sciezka = { nip: "nip", regon: "regon", rachunek: "bank-account" }[szukaj];
+    const res = await getJson(`${MF}/${sciezka}/${v}?date=${dzis}`);
+    if (!res.ok) {
+      if (res.status === 400) return { blad: "Ministerstwo Finansów odrzuciło zapytanie – sprawdź numer.", pobrano };
+      if (res.status === 429) return { blad: "Wyczerpany dzienny limit zapytań do Białej listy. Spróbuj jutro.", pobrano };
+      return { blad: "Serwis Białej listy (Ministerstwo Finansów) nie odpowiada. Spróbuj za chwilę.", pobrano };
+    }
+
+    // Wyszukiwanie po rachunku zwraca listę podmiotów; po NIP/REGON – jeden podmiot.
+    const r = res.data?.result;
+    const subject = r?.subject ?? r?.subjects?.[0] ?? null;
+    if (!subject) {
+      return {
+        znaleziono: false,
+        komunikat: `Brak podmiotu dla ${szukaj === "rachunek" ? "tego rachunku" : `${szukaj.toUpperCase()} ${v}`} na Białej liście (stan na ${dzis}). ` +
+          "To nie znaczy, że firma nie istnieje – może nie być czynnym podatnikiem VAT.",
+        zrodlo, pobrano,
+      };
+    }
+
+    return {
+      znaleziono: true,
+      nazwa: subject.name,
+      nip: subject.nip ?? null,
+      regon: subject.regon ?? null,
+      krs: subject.krs ?? null,
+      statusVat: subject.statusVat ?? null, // „Czynny”, „Zwolniony”, „Niezarejestrowany”
+      adres: subject.workingAddress ?? subject.residenceAddress ?? null,
+      dataRejestracji: subject.registrationLegalDate ?? null,
+      liczbaRachunkowNaLiscie: Array.isArray(subject.accountNumbers) ? subject.accountNumbers.length : 0,
+      ...(szukaj === "rachunek" ? { rachunekNaLiscie: true } : {}),
+      stanNaDzien: dzis,
+      identyfikatorZapytania: r?.requestId ?? null,
+      zrodlo, pobrano,
     };
   },
 });

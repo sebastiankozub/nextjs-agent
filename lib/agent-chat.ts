@@ -28,10 +28,13 @@ import { CHAT_AGENT_INSTRUCTIONS, MAX_AGENT_STEPS } from "./instructions";
 import {
   czas,
   createDiagnostyka,
+  dniRobocze,
+  firma,
   kalkulator,
   kursKrypto,
   notatki,
   pogoda,
+  przeliczCzas,
   strefaCzasowa,
   swieta,
   waluty,
@@ -238,6 +241,9 @@ export async function handleChat(body: unknown, authConfig: AuthConfig): Promise
           kalkulator,
           czas,
           strefaCzasowa,
+          przeliczCzas,
+          dniRobocze,
+          firma,
           notatki,
           diagnostyka: createDiagnostyka(() => ({
             model: modelId,
