@@ -51,6 +51,36 @@ export function getOpenRouterConfig(): OpenRouterConfig {
   return { ok: true, apiKey: rawKey.trim(), modelId: rawModel.trim() };
 }
 
+export type EmbeddingConfig =
+  | { ok: true; apiKey: string; modelId: string }
+  | { ok: false; message: string };
+
+/**
+ * Model embeddingów do bazy wiedzy (lekcja 6): OPENROUTER_EMBEDDING_MODEL, np. openai/text-embedding-3-small.
+ * TEN SAM model służy do zapisu fragmentów (/upload) i do zamiany pytania na embedding (searchKnowledge) –
+ * embeddingi z różnych modeli nie są ze sobą porównywalne.
+ * Długość wektora musi zgadzać się z kolumną chunks.embedding w Supabase (domyślnie vector(1536)).
+ *
+ * Sprawdzone 21.11.2026: model openai/text-embedding-3-small zwraca embedding o długości 1536
+ * (= chunks.embedding vector(1536) i parametr match_chunks). Zmiana modelu = zmiana długości w SQL w obu miejscach.
+ */
+export function getEmbeddingConfig(): EmbeddingConfig {
+  const base = getOpenRouterConfig();
+  if (!base.ok) return base;
+  const rawModel = process.env.OPENROUTER_EMBEDDING_MODEL ?? "";
+  const problems: string[] = [];
+  if (!rawModel) problems.push("brak OPENROUTER_EMBEDDING_MODEL");
+  else if (rawModel !== rawModel.trim()) problems.push("OPENROUTER_EMBEDDING_MODEL ma spacje na początku/końcu");
+  else if (/^["']|["']$/.test(rawModel)) problems.push("OPENROUTER_EMBEDDING_MODEL jest w cudzysłowie – wpisz samą nazwę");
+  if (problems.length > 0) {
+    return {
+      ok: false,
+      message: publicMessage(`Błąd konfiguracji: ${problems.join("; ")}. Popraw (${WHERE}).`, "CONFIG"),
+    };
+  }
+  return { ok: true, apiKey: base.apiKey, modelId: rawModel.trim() };
+}
+
 /** Krótka treść błędu od OpenRoutera (bez danych wrażliwych), np. „User not found”. */
 function providerDetail(error: APICallError): string {
   let detail = "";
