@@ -3,3 +3,5 @@ Design wykresu:
 Sprawdz pogodę w Warszawie na kolejny dzień roboczy i zrób tło aby pasowało do Warszawy i tej pogody. 
 
 
+Klient z firmy o NIP 6972090672 chce konsultację za 5 dni roboczych. 
+Sprawdź firmę i jej status VAT, ustal datę konsultacji, potem termin płatności faktury 7 dni roboczych po konsultacji i zapisz notatkę ze wszystkimi danymi.
