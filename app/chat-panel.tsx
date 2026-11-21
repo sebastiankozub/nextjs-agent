@@ -4,6 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
 import { markInterrupted } from "../lib/analysis";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 
 // Podpowiedzi opisów obrazu w temacie Studio Nova (klik = wstawienie do pola wiadomości).
 const IMAGE_PROMPT_HINTS = [
@@ -23,11 +24,34 @@ export default function ChatPanel({
   id,
   api,
   allowImages = false,
+  initialConversationId = null,
+  initialMessages = [],
+  initialDbError = null,
+  headerSlot = null,
 }: {
   id: string;
   api: string;
   allowImages?: boolean;
+  // Lekcja 5, W2: ostatnia rozmowa wczytana z bazy przez serwer (app/page.tsx).
+  initialConversationId?: number | null;
+  initialMessages?: UIMessage[];
+  initialDbError?: string | null;
+  // Miejsce w nagłówku (obok zakładek) na „Nowa rozmowa”; null = przycisku nie pokazujemy (inny tryb).
+  headerSlot?: HTMLElement | null;
 }) {
+  // Numer rozmowy w bazie. null = następna wiadomość zacznie nową rozmowę.
+  // Ref, bo czyta go transport (tworzony raz) przy każdym wysłaniu.
+  const conversationIdRef = useRef<number | null>(initialConversationId);
+  // Numer rozmowy trafia też do adresu (/?rozmowa=…): F5 wczytuje TĘ rozmowę, a nie inną.
+  function rememberConversation(conversationId: number | null) {
+    conversationIdRef.current = conversationId;
+    if (typeof window === "undefined") return;
+    const target = conversationId === null ? "/?nowa=1" : `/?rozmowa=${conversationId}`;
+    if (window.location.pathname + window.location.search !== target) {
+      window.history.replaceState(window.history.state, "", target);
+    }
+  }
+  const [dbError, setDbError] = useState<string | null>(initialDbError);
   const [transport] = useState(
     () =>
       new DefaultChatTransport({
@@ -41,6 +65,7 @@ export default function ChatPanel({
             id,
             trigger,
             messageId,
+            conversationId: conversationIdRef.current,
             messages: messages
               .filter((m) => !isGeneratedImageMessage(m))
               .map((m) =>
@@ -57,6 +82,7 @@ export default function ChatPanel({
   const messagesRef = useRef<UIMessage[]>([]);
   const { messages, sendMessage, setMessages, status, clearError, stop } = useChat({
     id,
+    messages: initialMessages,
     transport,
     onError: (err) => {
       // Błąd czatu dotyczy ostatniej wiadomości użytkownika – pokazujemy go pod nią, nie na dole.
@@ -67,6 +93,22 @@ export default function ChatPanel({
     },
   });
   messagesRef.current = messages;
+
+  // Serwer podaje numer rozmowy (i ewentualny błąd bazy) w metadanych odpowiedzi agenta.
+  useEffect(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const meta = messages[i].metadata as { conversationId?: unknown; dbError?: unknown } | undefined;
+      if (typeof meta?.dbError === "string") {
+        setDbError(meta.dbError);
+        return;
+      }
+      if (typeof meta?.conversationId === "number") {
+        rememberConversation(meta.conversationId);
+        setDbError(null);
+        return;
+      }
+    }
+  }, [messages]);
   const [generating, setGenerating] = useState(false);
   const [input, setInput] = useState("");
   const [image, setImage] = useState<File | null>(null);
@@ -122,12 +164,14 @@ export default function ChatPanel({
       const res = await fetch("/api/image", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, conversationId: conversationIdRef.current }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.image) {
         throw new Error(data.error || "Nie udało się wygenerować obrazu.");
       }
+      if (typeof data.conversationId === "number") rememberConversation(data.conversationId);
+      setDbError(typeof data.dbError === "string" ? data.dbError : null);
       const mediaType = /^data:([^;]+);/.exec(data.image)?.[1] ?? "image/png";
       const ext = mediaType.split("/")[1]?.replace("jpeg", "jpg").replace("svg+xml", "svg") ?? "png";
       setMessages((prev) => [
@@ -152,6 +196,17 @@ export default function ChatPanel({
     } finally {
       setGenerating(false);
     }
+  }
+
+  // „Nowa rozmowa”: pusty czat; następna wiadomość utworzy nową rozmowę w bazie. Stara zostaje w bazie.
+  function startNewConversation() {
+    if (busy) return;
+    rememberConversation(null);
+    setMessages([]);
+    setMessageErrors({});
+    setInput("");
+    clearImage();
+    setImageError(null);
   }
 
   function clearImage() {
@@ -192,6 +247,24 @@ export default function ChatPanel({
 
   return (
     <>
+      {headerSlot &&
+        createPortal(
+          <button
+            type="button"
+            className="secondary new-chat"
+            onClick={startNewConversation}
+            disabled={busy || messages.length === 0}
+            title="Zacznij pustą rozmowę – poprzednia zostaje zapisana w bazie"
+          >
+            ＋ Nowa rozmowa
+          </button>,
+          headerSlot,
+        )}
+      {dbError && (
+        <p className="msg-error" role="alert">
+          ⚠️ {dbError}
+        </p>
+      )}
       <section className="messages" aria-label="Rozmowa" aria-live="polite">
         {messages.map((message, index) => (
           <div key={message.id} className={`message ${message.role}`}>

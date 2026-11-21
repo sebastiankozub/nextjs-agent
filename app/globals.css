@@ -1137,3 +1137,57 @@ button.stop:hover:not(:disabled) {
 @media (max-width: 640px) {
   .compare-row { grid-template-columns: 1fr; }
 }
+
+/* Lekcja 5, W2: pasek nad rozmową – „Nowa rozmowa” i ostrzeżenie o bazie. */
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.chat-toolbar .msg-error {
+  margin: 0;
+  margin-right: auto;
+}
+
+/* Lekcja 5, W2 (Standard): /history – lista rozmów. */
+.history { max-width: 760px; }
+.history .chat-toolbar { justify-content: flex-start; margin-top: 16px; }
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+  background: color-mix(in srgb, var(--field) 88%, transparent);
+}
+.history-item:hover, .history-item:focus-visible { background: var(--accent-soft); }
+.history-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-meta { font-size: 0.82rem; color: var(--muted); }
+.history-row { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.history-row .history-item { flex: 1 1 0; min-width: 0; }
+.history-delete { flex: none; align-self: center; }
+.history-error { flex-basis: 100%; }
+.history-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.history-empty p { margin: 0; line-height: 1.6; }
+
+/* Nagłówek czatu: logo + nazwa w jednej linii, opis pod spodem na całą szerokość,
+   zakładki i „Nowa rozmowa” w jednym rzędzie (przyklejone razem z nagłówkiem). */
+.brand-compact { align-items: center; }
+.brand-compact h1 { white-space: nowrap; }
+.header-desc { margin-top: -6px; padding-left: 56px; }
+.header-desc .tagline { max-width: none; margin: 0; }
+.modes-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.modes-slot { display: flex; align-items: center; }
+.modes-slot .new-chat { min-height: 36px; padding: 0 14px; font-size: 0.88rem; }
+@media (max-width: 560px) {
+  .header-desc { padding-left: 0; }
+}
+/* Gdy akcje nie mieszczą się obok nazwy – przechodzą do kolejnej linii, przy prawej krawędzi. */
+.chat-header .header-row { flex-wrap: wrap; row-gap: 8px; gap: 12px; }
+.chat-header .header-actions { margin-left: auto; }
