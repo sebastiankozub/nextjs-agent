@@ -36,6 +36,7 @@ import {
   saveExchange,
 } from "./conversations";
 import { generateConversationTitle } from "./conversation-title";
+import { buildProfileContext, getProfile, isSensitive, updateProfile } from "./profile";
 import { z } from "zod";
 import { validateImages } from "./images";
 import { describeProviderError, getOpenRouterConfig } from "./openrouter-config";
@@ -172,6 +173,10 @@ export async function handleChat(
         // Rozmowa w bazie: istniejąca albo nowa (pierwsza wiadomość). Błąd bazy nie blokuje czatu –
         // agent odpowiada, a przeglądarka pokazuje ostrzeżenie, że rozmowa nie zostanie zapisana.
         const conversation = await ensureConversation(requestedConversationId, userTextForDb);
+        // Profil użytkownika (lekcja 5, W3): wczytany przed odpowiedzią i dołączony do instrukcji jako dane.
+        // Błąd bazy = agent odpowiada bez profilu.
+        const profile = await getProfile();
+        const instructions = `${CHAT_AGENT_INSTRUCTIONS}\n\n${buildProfileContext(profile.ok ? profile.value : null)}`;
         const conversationMeta = conversation.ok
           ? { conversationId: conversation.value }
           : { dbError: conversation.error };
@@ -254,7 +259,7 @@ export async function handleChat(
 
         const result = streamText({
           model: openrouter(modelId),
-          instructions: CHAT_AGENT_INSTRUCTIONS,
+          instructions,
           messages: converted.messages,
           abortSignal: requestSignal ? AbortSignal.any([abort.signal, requestSignal]) : abort.signal,
           tools: (() => {
@@ -315,6 +320,57 @@ export async function handleChat(
             dniRobocze,
             firma,
             notatki,
+            // Lekcja 5, W3: pamięć o użytkowniku w tabeli user_profiles (jeden wiersz, aktualizowany).
+            zapiszProfil: tool({
+              description:
+                "Zapisuje w profilu to, co użytkownik WPROST powiedział o sobie w aktualnej wiadomości: imię oraz fakty " +
+                "(miasto, upodobania, ulubione jedzenie, styl odpowiedzi, wartości preferencji jak dystans przebiegnięty). " +
+                "Nowe fakty dopisuje do starych; ta sama nazwa = nowa wartość. " +
+                "nowePola – preferencje, które użytkownik chce, żebyś śledził, a nie podał jeszcze wartości. " +
+                "Nie używaj dla domysłów, planów, żartów, faktów o innych osobach ani danych wrażliwych (hasła, klucze, numery kart i kont, zdrowie).",
+              inputSchema: z.object({
+                imie: z.string().min(1).max(60).optional().describe("Imię użytkownika, jeśli je podał"),
+                fakty: z
+                  .array(
+                    z.object({
+                      nazwa: z.string().min(2).max(40).describe("Krótka nazwa faktu, np. „miasto”, „ulubione jedzenie”"),
+                      wartosc: z.string().min(1).max(200).describe("Wartość, np. „Toruń”, „pierogi”"),
+                    }),
+                  )
+                  .max(10)
+                  .optional()
+                  .describe("Pozostałe fakty o użytkowniku jako pary nazwa–wartość"),
+                nowePola: z
+                  .array(z.string().min(2).max(40))
+                  .max(10)
+                  .optional()
+                  .describe("Nazwy nowych preferencji do śledzenia, bez wartości, np. „dystans przebiegnięty”"),
+              }),
+              execute: async ({ imie, fakty = [], nowePola = [] }) => {
+                // Strażnik po stronie serwera – dane wrażliwe odrzucamy niezależnie od tego, co zrobi model.
+                const odrzucone = fakty.filter((f) => isSensitive(f.nazwa, f.wartosc)).map((f) => f.nazwa);
+                const facts = Object.fromEntries(
+                  fakty.filter((f) => !isSensitive(f.nazwa, f.wartosc)).map((f) => [f.nazwa, f.wartosc]),
+                );
+                const name = imie && !isSensitive("imię", imie) ? imie : undefined;
+                const newFields = nowePola.filter((field) => !isSensitive(field, ""));
+                odrzucone.push(...nowePola.filter((field) => isSensitive(field, "")));
+                if (!name && Object.keys(facts).length === 0 && newFields.length === 0) {
+                  // Same dane wrażliwe to nie awaria narzędzia – tylko informacja dla modelu.
+                  return odrzucone.length
+                    ? { zapisano: {}, odrzucone, uwaga: "Danych wrażliwych nie zapisuję – nic nie zapisano." }
+                    : { blad: "Nie zapisano niczego – brak danych do zapisania." };
+                }
+                const saved = await updateProfile({ name, facts, newFields });
+                if (!saved.ok) return { blad: saved.error };
+                return {
+                  zapisano: { ...(name ? { imie: name } : {}), ...facts },
+                  ...(newFields.length ? { nowePola: newFields } : {}),
+                  ...(odrzucone.length ? { odrzucone, uwaga: "Danych wrażliwych nie zapisuję." } : {}),
+                  profil: saved.value,
+                };
+              },
+            }),
             diagnostyka: createDiagnostyka(() => ({
               model: modelId,
               narzedzia: toolNames,
@@ -411,7 +467,7 @@ export async function handleChat(
             return {
               activeTools: [ANSWER_TOOL],
               toolChoice: "required",
-              instructions: `${CHAT_AGENT_INSTRUCTIONS}\n\n${buildLastStepRule(reason)}`,
+              instructions: `${instructions}\n\n${buildLastStepRule(reason)}`,
             };
           },
           // Koniec tylko wtedy, gdy ostatni krok to SAMO „odpowiedz”. Gdy model wywoła „odpowiedz”

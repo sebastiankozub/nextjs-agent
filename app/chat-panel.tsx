@@ -28,6 +28,7 @@ export default function ChatPanel({
   initialMessages = [],
   initialDbError = null,
   headerSlot = null,
+  initialUserName = null,
 }: {
   id: string;
   api: string;
@@ -38,7 +39,13 @@ export default function ChatPanel({
   initialDbError?: string | null;
   // Miejsce w nagłówku (obok zakładek) na „Nowa rozmowa”; null = przycisku nie pokazujemy (inny tryb).
   headerSlot?: HTMLElement | null;
+  // Imię z profilu – powitanie na starcie nowej rozmowy (lekcja 5, W3).
+  initialUserName?: string | null;
 }) {
+  const [userName, setUserName] = useState<string | null>(initialUserName);
+  // Powitanie pokazujemy w rozmowie zaczętej od zera (nie przy rozmowie wczytanej z bazy).
+  // To tylko widok: nie trafia do bazy ani do modelu.
+  const [showGreeting, setShowGreeting] = useState(initialMessages.length === 0);
   // Numer rozmowy w bazie. null = następna wiadomość zacznie nową rozmowę.
   // Ref, bo czyta go transport (tworzony raz) przy każdym wysłaniu.
   const conversationIdRef = useRef<number | null>(initialConversationId);
@@ -203,6 +210,14 @@ export default function ChatPanel({
     if (busy) return;
     rememberConversation(null);
     setMessages([]);
+    setShowGreeting(true);
+    // Imię mogło się zmienić w tej rozmowie (zapiszProfil) albo na /profile – pobieramy aktualne.
+    fetch("/api/profile")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((profile: { name?: string | null } | null) => {
+        if (profile) setUserName(profile.name ?? null);
+      })
+      .catch(() => {});
     setMessageErrors({});
     setInput("");
     clearImage();
@@ -266,6 +281,16 @@ export default function ChatPanel({
         </p>
       )}
       <section className="messages" aria-label="Rozmowa" aria-live="polite">
+        {showGreeting && (
+          <div className="message assistant greeting">
+            <span className="author">Chatbot</span>
+            <p>
+              {userName
+                ? `Dzień dobry, ${userName}! W czym mogę dziś pomóc?`
+                : "Dzień dobry! Jestem asystentem Studio Nova. Jak mam się do Ciebie zwracać?"}
+            </p>
+          </div>
+        )}
         {messages.map((message, index) => (
           <div key={message.id} className={`message ${message.role}`}>
             <span className="author">
@@ -550,6 +575,7 @@ const TOOL_LABELS: Record<string, string> = {
   dniRobocze: "📅 dni robocze",
   firma: "🏢 firma",
   notatki: "📝 notatki",
+  zapiszProfil: "🧠 zapiszProfil",
   diagnostyka: "🩺 diagnostyka",
   kursKrypto: "🦎🪙 kursKrypto",
   // Stare nazwy (lekcja 3) – dla rozmów sprzed zmiany.

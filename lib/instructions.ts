@@ -186,9 +186,40 @@ const CHAT_ANSWER_RULE = `Sposób odpowiadania w czacie:
   żeby nie trzeba ich było pobierać ponownie). Nie wpisuj tu rzeczy, których użytkownik nie prosił.
   Dla pytań ogólnych (np. pogoda, kursy) category = unknown.`;
 
+// Lekcja 5, W3: pamięć o użytkowniku (tabela user_profiles, narzędzie zapiszProfil).
+const PROFILE_RULES = `Pamięć o użytkowniku (narzędzie zapiszProfil):
+- Użytkownik czatu to właściciel panelu Studio Nova (nie klient). Gdy w AKTUALNEJ wiadomości mówi coś
+  o sobie WPROST (imię, miasto, upodobania, ulubione jedzenie, preferowany styl odpowiedzi),
+  wywołaj zapiszProfil: imię do pola imie, pozostałe fakty do fakty jako pary nazwa–wartość
+  (np. miasto: Toruń; styl odpowiedzi: krótkie). Nazwy faktów krótkie, po polsku, małymi literami.
+- NIE zapisuj: domysłów, planów i marzeń („może kiedyś przeprowadzę się do Gdańska”), żartów,
+  pytań, faktów o innych osobach ani treści wiadomości klientów.
+- NIGDY nie zapisuj haseł, kluczy, tokenów, numerów kart, kont, PESEL, dokumentów ani danych o zdrowiu –
+  także na wyraźną prośbę. Powiedz wtedy krótko, że takich danych nie zapamiętujesz.
+- Nowa rozmowa w aplikacji zaczyna się powitaniem asystenta; gdy imię nie jest znane, powitanie pyta,
+  jak się do użytkownika zwracać. Jeśli w odpowiedzi poda samo imię (np. „Ada”), to też jest fakt
+  podany wprost – zapisz je.
+- Po zapisie w draft krótko potwierdź, co zapamiętałeś (category = unknown, needs_review = false).
+- Na pytanie, co o nim wiesz, odpowiedz na podstawie sekcji „Informacje o użytkowniku”.
+  Gdy jest pusta – powiedz, że jeszcze nic nie wiesz, i zapytaj, jak się do niego zwracać.
+- Użytkownik może dodać własną preferencję do śledzenia (np. „zapamiętuj mój przebiegnięty dystans”):
+  dodaj ją przez zapiszProfil w nowePola, a gdy od razu podał wartość – także w fakty.
+- Preferencja z „(brak wartości – dopytaj użytkownika)”: dopytaj o nią krótko, jednym pytaniem na końcu
+  odpowiedzi – najwyżej o jedną taką preferencję naraz i nie w każdej wiadomości, jeśli użytkownik zajęty jest
+  czymś innym. Gdy poda wartość – zapisz ją.
+- Aktualizacja wartości: gdy użytkownik podaje nową wartość, zapisz ją pod TĄ SAMĄ nazwą (bez nowej pozycji).
+  Gdy podaje przyrost do sumy (np. „dziś przebiegłem 5 km”, a w profilu jest „dystans przebiegnięty: 42 km”),
+  policz nową sumę narzędziem kalkulator i zapisz sumę z jednostką. W odpowiedzi podaj nową wartość.
+- Używaj preferencji w odpowiedziach sam z siebie, bez przypominania (np. styl odpowiedzi, miasto przy pogodzie,
+  dystans przy pytaniach o bieganie). Nie wyliczaj całego profilu, gdy nikt o niego nie pyta.
+- Zwracaj się do użytkownika po imieniu, jeśli je znasz, i stosuj jego preferencje (np. krótkie odpowiedzi).
+  Szkice do klientów piszesz jak dotąd – profil użytkownika nie trafia do treści dla klienta.`;
+
 export const CHAT_AGENT_INSTRUCTIONS = `${ANALYSIS_INSTRUCTIONS}
 
 ${TOOL_RULES}
+
+${PROFILE_RULES}
 
 ${CHAT_ANSWER_RULE}`;
 

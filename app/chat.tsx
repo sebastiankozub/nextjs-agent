@@ -20,11 +20,13 @@ export default function Chat({
   initialConversationId = null,
   initialMessages = [],
   dbError = null,
+  userName = null,
 }: {
   modelId: string | null;
   initialConversationId?: number | null;
   initialMessages?: UIMessage[];
   dbError?: string | null;
+  userName?: string | null;
 }) {
   const [mode, setMode] = useState<Mode>("chat");
   const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
@@ -45,7 +47,10 @@ export default function Chat({
             <p className="model-id">model: {modelId ?? "brak konfiguracji modelu"}</p>
           </div>
           <div className="header-actions">
-            <Link href="/history" className="nav-link">
+            <Link href="/profile" className="nav-link">
+            🧠 Profil
+          </Link>
+          <Link href="/history" className="nav-link">
               🗂 Historia
             </Link>
             <Link href="/dashboard" className="nav-link">
@@ -95,6 +100,7 @@ export default function Chat({
             initialConversationId={initialConversationId}
             initialMessages={initialMessages}
             initialDbError={dbError}
+            initialUserName={userName}
             headerSlot={mode === version.id ? headerSlot : null}
           />
         </div>

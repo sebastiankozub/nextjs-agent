@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import type { UIMessage } from "ai";
 import { SESSION_COOKIE, getAuthConfig, isValidSessionToken, signReply } from "../lib/auth";
 import { loadConversation, parseConversationId } from "../lib/conversations";
+import { getProfile } from "../lib/profile";
 import Chat from "./chat";
 import ThemePicker from "./theme-picker";
 import { showErrorDetails } from "../lib/openrouter-config";
@@ -29,6 +30,8 @@ export default async function Home({
     const requestedId = parseConversationId(params.rozmowa);
     const loaded = fresh ? null : await loadConversation(requestedId);
     const conversation = loaded?.ok ? loaded.value : null;
+    // Imię z profilu – do powitania na starcie nowej rozmowy (lekcja 5, W3).
+    const profile = await getProfile();
     const dbError =
       loaded && !loaded.ok
         ? loaded.error
@@ -51,6 +54,7 @@ export default async function Home({
         initialConversationId={conversation?.id ?? null}
         initialMessages={initialMessages}
         dbError={dbError}
+        userName={profile.ok ? profile.value.name : null}
       />
     );
   }

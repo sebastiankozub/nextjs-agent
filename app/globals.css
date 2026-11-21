@@ -1191,3 +1191,35 @@ button.stop:hover:not(:disabled) {
 /* Gdy akcje nie mieszczą się obok nazwy – przechodzą do kolejnej linii, przy prawej krawędzi. */
 .chat-header .header-row { flex-wrap: wrap; row-gap: 8px; gap: 12px; }
 .chat-header .header-actions { margin-left: auto; }
+
+/* Lekcja 5, W3 (Standard): /profile. */
+.profile-form { display: flex; flex-direction: column; gap: 18px; }
+.profile-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; color: var(--muted); }
+.profile-prefs { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+.profile-prefs legend { padding: 0 6px; font-size: 0.88rem; color: var(--muted); }
+.profile-prefs > button { align-self: flex-start; }
+.profile-row { display: flex; gap: 8px; }
+.profile-row input:first-child { flex: 0 1 34%; min-width: 0; }
+.profile-row input:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.profile-row button { flex: none; }
+.profile-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.profile-actions p { margin: 0; }
+/* Powitanie na starcie pustej rozmowy (nie trafia do bazy ani do modelu). */
+.message.greeting { opacity: 0.95; }
+@media (max-width: 560px) {
+  .profile-row { flex-wrap: wrap; }
+  .profile-row input:first-child, .profile-row input:nth-child(2) { flex: 1 1 100%; }
+}
+.profile-form input {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-body);
+  box-shadow: var(--inset);
+}
+.profile-form input::placeholder { color: var(--muted); opacity: 1; }
+.profile-form input:focus { outline: none; border-color: var(--accent); box-shadow: var(--inset), 0 0 0 3px var(--focus); }
