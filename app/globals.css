@@ -1223,3 +1223,38 @@ button.stop:hover:not(:disabled) {
 }
 .profile-form input::placeholder { color: var(--muted); opacity: 1; }
 .profile-form input:focus { outline: none; border-color: var(--accent); box-shadow: var(--inset), 0 0 0 3px var(--focus); }
+
+/* Lekcja 6, W2: /upload – duże pole na treść dokumentu. */
+.upload-form textarea {
+  min-height: 320px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-body);
+  line-height: 1.5;
+  box-shadow: var(--inset);
+  resize: vertical;
+}
+.upload-form textarea::placeholder { color: var(--muted); opacity: 1; }
+.upload-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--inset), 0 0 0 3px var(--focus); }
+.upload-form .char-count { font-size: 0.8rem; opacity: 0.8; }
+
+/* Lekcja 6, W2 (Standard): etapy importu, błąd z podpowiedzią, lista dokumentów. */
+.upload-fields { display: flex; flex-direction: column; gap: 18px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.upload-stages { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.9rem; }
+.upload-stage.waiting { color: var(--muted); }
+.upload-stage.active { color: var(--accent-text); font-weight: 600; }
+.upload-stage.done { color: var(--text); }
+.upload-stage.failed { color: var(--danger); font-weight: 600; }
+.upload-error { display: flex; flex-direction: column; gap: 6px; }
+.upload-error p { margin: 0; line-height: 1.5; }
+.upload-docs { margin-top: 28px; display: flex; flex-direction: column; gap: 10px; }
+.upload-docs h2 { margin: 0; font-size: 1.05rem; }
+.upload-docs .history-item:hover { background: color-mix(in srgb, var(--field) 88%, transparent); }
+
+/* Lekcja 6, W2 (dla szybkich): wybór sposobu dzielenia. */
+.upload-method label { display: flex; align-items: center; gap: 6px; color: var(--text); cursor: pointer; }
+.upload-form .upload-method input[type="radio"] { min-height: 0; padding: 0; box-shadow: none; width: auto; accent-color: var(--accent); }

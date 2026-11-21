@@ -53,6 +53,9 @@ export default function Chat({
           <Link href="/history" className="nav-link">
               🗂 Historia
             </Link>
+            <Link href="/upload" className="nav-link">
+              📚 Baza wiedzy
+            </Link>
             <Link href="/dashboard" className="nav-link">
               ✈ Asystent podróży
             </Link>
