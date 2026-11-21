@@ -21,6 +21,7 @@ import {
   hasError,
   INTERRUPTED_NOTE,
   summarizeFailures,
+  type KnowledgeSource,
   type ToolCallRecord,
   toChatModelMessages,
   validateAnalysis,
@@ -56,6 +57,7 @@ import {
   swieta,
   waluty,
   wikipedia,
+  searchKnowledge,
 } from "./tools";
 
 // Czat ujednolicony = narzędzia i streaming z L3 + walidacja i bezpieczeństwo z L2W3.
@@ -254,6 +256,8 @@ export async function handleChat(
         // Propozycja następnej wiadomości (niedokończone zadania) – trafia do pola wiadomości w przeglądarce.
         let continuation: string | null = null;
         let imagesThisTurn = 0;
+        // Fragmenty bazy wiedzy użyte w zaakceptowanej odpowiedzi (lista źródeł pod odpowiedzią).
+        let knowledgeSources: KnowledgeSource[] = [];
         // Lista narzędzi dla diagnostyki – wypełniana poniżej, czytana dopiero przy wywołaniu.
         let toolNames: string[] = [];
 
@@ -320,6 +324,8 @@ export async function handleChat(
             dniRobocze,
             firma,
             notatki,
+            // Lekcja 6, W3: baza wiedzy (RAG) – fragmenty dokumentów z /upload.
+            searchKnowledge,
             // Lekcja 5, W3: pamięć o użytkowniku w tabeli user_profiles (jeden wiersz, aktualizowany).
             zapiszProfil: tool({
               description:
@@ -420,11 +426,22 @@ export async function handleChat(
                 "Zakończ odpowiedź: przekaż wynik w schemacie analizy (category, priority, draft, needs_review). " +
                 "draft to pełna treść odpowiedzi dla użytkownika. niedokonczone – części zadania, których nie wykonałeś.",
               inputSchema: chatAnswerSchema,
-              execute: async ({ niedokonczone = [], ...analysis }) => {
+              execute: async ({ niedokonczone = [], zrodlaBazyWiedzy = [], ...analysis }) => {
                 const outcome = validateAnalysis(analysis);
                 if (!outcome.ok) {
                   return { status: "odrzucono", powod: outcome.details?.join(" ") ?? outcome.message };
                 }
+                // Źródła pod odpowiedzią: tylko fragmenty, które searchKnowledge NAPRAWDĘ zwrócił w tym zadaniu
+                // (model nie dopisze numeru spoza wyników), w kolejności podanej przez model.
+                const found = new Map<number, KnowledgeSource>();
+                for (const call of calls) {
+                  if (call.toolName !== "searchKnowledge") continue;
+                  const out = call.output as { fragmenty?: KnowledgeSource[] } | undefined;
+                  for (const f of out?.fragmenty ?? []) found.set(f.id, f);
+                }
+                knowledgeSources = [...new Set(zrodlaBazyWiedzy)]
+                  .map((id) => found.get(id))
+                  .filter((f): f is KnowledgeSource => f !== undefined);
                 // Notkę o błędach narzędzi i niedokończonych zadaniach składa serwer – model nie musi.
                 const note = buildUnfinishedNote(niedokonczone, summarizeFailures(calls));
                 finalReply = note ? `${buildChatReply(outcome.analysis)}\n\n${note}` : buildChatReply(outcome.analysis);
@@ -580,7 +597,12 @@ export async function handleChat(
           // continuation – propozycja następnej wiadomości (przeglądarka wpisuje ją w pole, nie wysyła sama).
           writer.write({
             type: "message-metadata",
-            messageMetadata: { replySig: signReply(reply, authConfig), ...(continuation ? { continuation } : {}) },
+            messageMetadata: {
+              replySig: signReply(reply, authConfig),
+              ...(continuation ? { continuation } : {}),
+              // Zawsze wysyłamy (także pustą listę) – przeglądarka wie wtedy, że model sam wskazał źródła.
+              ...(answered ? { knowledgeSources } : {}),
+            },
           });
         }
 

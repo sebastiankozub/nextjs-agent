@@ -253,7 +253,19 @@ export const chatAnswerSchema = analysisSchema.extend({
     .max(3)
     .optional()
     .describe("Części zadania, których nie zdążyłeś wykonać (np. zabrakło kroków)"),
+  // Lekcja 6, W3 (Standard): które fragmenty z searchKnowledge naprawdę posłużyły do odpowiedzi.
+  zrodlaBazyWiedzy: z
+    .array(z.number().int().positive())
+    .max(10)
+    .optional()
+    .describe(
+      "id fragmentów z searchKnowledge, z których wziąłeś informacje do draft – tylko użyte, nie wszystkie znalezione. " +
+        "Pusta lista albo brak pola, gdy odpowiedź nie korzysta z bazy wiedzy.",
+    ),
 });
+
+/** Fragment bazy wiedzy pokazywany pod odpowiedzią (metadane wiadomości knowledgeSources). */
+export type KnowledgeSource = { id: number; tytul: string; tresc: string; podobienstwo: number };
 
 export type UnfinishedTask = { zadanie: string; polecenie: string };
 

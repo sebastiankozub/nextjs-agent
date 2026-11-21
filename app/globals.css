@@ -1258,3 +1258,28 @@ button.stop:hover:not(:disabled) {
 /* Lekcja 6, W2 (dla szybkich): wybór sposobu dzielenia. */
 .upload-method label { display: flex; align-items: center; gap: 6px; color: var(--text); cursor: pointer; }
 .upload-form .upload-method input[type="radio"] { min-height: 0; padding: 0; box-shadow: none; width: auto; accent-color: var(--accent); }
+
+/* Lekcja 6, W3 (Standard): źródła z bazy wiedzy pod odpowiedzią. */
+.knowledge-sources ul { flex-direction: column; flex-wrap: nowrap; }
+.knowledge-source { display: flex; flex-direction: column; gap: 6px; }
+.knowledge-source-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.knowledge-title { font-weight: 600; color: var(--text); }
+.knowledge-similarity {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.knowledge-toggle { min-height: 28px; padding: 0 10px; font-size: 0.78rem; }
+.knowledge-fragment {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--field) 88%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  color: var(--text);
+}

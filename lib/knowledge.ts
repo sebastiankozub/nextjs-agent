@@ -2,7 +2,7 @@
 // Każdy fragment dostaje embedding (model z OPENROUTER_EMBEDDING_MODEL) – ten sam model co dla pytań.
 import "server-only";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { embedMany } from "ai";
+import { embed, embedMany } from "ai";
 import { describeProviderError, getEmbeddingConfig } from "./openrouter-config";
 import { DB_NOT_CONFIGURED, getSupabase } from "./supabase";
 
@@ -332,6 +332,75 @@ export async function importDocument(
   return {
     ok: true,
     value: { id: documentId, title: savedTitle, chunkCount: chunks.length, backfilled: pending.length - failed.length, replaced, warnings },
+  };
+}
+
+// --- Wyszukiwanie (lekcja 6, W3: narzędzie searchKnowledge) ---
+
+/**
+ * PRÓG PODOBIEŃSTWA – jedyne miejsce w kodzie. Fragment z niższym podobieństwem (0–1) nie jest źródłem:
+ * nie trafia do modelu ani na listę źródeł pod odpowiedzią.
+ * Dobrany próbami 21.11.2026 (scripts/proba-podobienstwa.mjs, openai/text-embedding-3-small, Cennik 2026 + FAQ):
+ *  - właściwy fragment dla pytań z odpowiedzią w bazie: 0,577–0,768 (najsłabszy: „rok z góry” → rabat 10%),
+ *  - pytania spoza bazy: najwyżej 0,441 („numer telefonu do sprzedaży”), 0,401 („biuro w Gdańsku”),
+ *    tematy obce (pogoda, sernik): poniżej 0,26.
+ * 0,5 leży pośrodku luki 0,441–0,577. Przy 0,4 pytanie o telefon dostawało 3 „źródła” bez związku.
+ * Za wysoki próg = agent odmawia, choć odpowiedź jest w bazie; za niski = „źródła” bez związku z pytaniem.
+ * Po dodaniu nowych dokumentów warto powtórzyć próby.
+ */
+export const KNOWLEDGE_MIN_SIMILARITY = 0.5;
+
+export type KnowledgeMatch = { id: number; title: string; content: string; similarity: number };
+
+/**
+ * Zamienia pytanie na embedding (TEN SAM model co przy imporcie) i woła w Supabase funkcję match_chunks.
+ * Zwraca najlepiej pasujące fragmenty: tytuł dokumentu, treść, podobieństwo (0–1, im więcej, tym bliżej).
+ */
+export async function searchKnowledge(query: string, count = 3): Promise<Result<KnowledgeMatch[]>> {
+  const db = getSupabase();
+  if (!db) return { ok: false, error: DB_NOT_CONFIGURED };
+  const embeddingConfig = getEmbeddingConfig();
+  if (!embeddingConfig.ok) return { ok: false, error: embeddingConfig.message };
+
+  let vector: number[];
+  try {
+    const openrouter = createOpenRouter({ apiKey: embeddingConfig.apiKey });
+    const result = await embed({ model: openrouter.textEmbeddingModel(embeddingConfig.modelId), value: query });
+    vector = result.embedding;
+  } catch (error) {
+    console.error("[baza wiedzy: embedding pytania]", error);
+    return {
+      ok: false,
+      error: describeProviderError(error, "embedding pytania", embeddingConfig.modelId, "OPENROUTER_EMBEDDING_MODEL"),
+    };
+  }
+
+  const { data, error } = await db.rpc("match_chunks", {
+    query_embedding: JSON.stringify(vector),
+    match_count: count,
+  });
+  if (error) {
+    console.error("[baza wiedzy: match_chunks]", error);
+    const missing = error.code === "PGRST202" || /match_chunks/i.test(error.message ?? "");
+    return {
+      ok: false,
+      error: missing
+        ? "Nie udało się przeszukać bazy wiedzy: brakuje funkcji match_chunks albo uprawnień do niej (lekcja 6, warsztat 1)."
+        : dbMessage(error, "Nie udało się przeszukać bazy wiedzy."),
+    };
+  }
+  const rows = (data ?? []) as { id: number; title: string; content: string; similarity: number | null }[];
+  return {
+    ok: true,
+    value: rows
+      // Fragmenty bez embeddingu (similarity = null) nie są wynikami.
+      .filter((r) => typeof r.similarity === "number")
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        content: r.content,
+        similarity: Math.round((r.similarity as number) * 1000) / 1000,
+      })),
   };
 }
 
