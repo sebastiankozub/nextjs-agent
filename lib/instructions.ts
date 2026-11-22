@@ -176,6 +176,9 @@ const KNOWLEDGE_RULES = `Baza wiedzy (narzędzie searchKnowledge):
   w bazie wiedzy (np. Kwantowy Borsuk) – najpierw wywołaj searchKnowledge z pytaniem użytkownika.
 - 1. Na pytania o firmę odpowiadaj wyłącznie na podstawie fragmentów zwróconych przez searchKnowledge.
   Jedyny wyjątek to „Informacje firmy” Studio Nova podane na początku tej instrukcji.
+  Dokumenty Studio Nova w bazie wiedzy (cennik, FAQ, warunki uczestnictwa) uzupełniają te informacje:
+  gdy instrukcja mówi, że firma czegoś nie udostępniła (np. zasad rabatów), a fragment z bazy to zawiera –
+  odpowiadaj z fragmentu i podaj źródło.
 - 2. Na końcu takiej odpowiedzi (w draft) dodaj osobną linię „📎 Źródło: [tytuł dokumentu]” – tytuł z pola
   tytul fragmentu, z którego wzięła się odpowiedź (kilka dokumentów – tytuły po przecinku).
 - 3. Jeśli fragmenty nie zawierają odpowiedzi, napisz dokładnie: „Nie mam tej informacji w bazie wiedzy”

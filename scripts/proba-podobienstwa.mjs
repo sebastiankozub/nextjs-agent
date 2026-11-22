@@ -22,6 +22,14 @@ const questions = [
   ["NIE", "Czy macie biuro w Gdańsku?"],
   ["NIE", "Jaka będzie jutro pogoda w Krakowie?"],
   ["NIE", "Jak upiec sernik?"],
+  // Studio Nova – własne dokumenty (W3 dla szybkich).
+  ["TAK", "Ile stracę, jeśli zrezygnuję z wyjazdu na dwa tygodnie przed wylotem?"],
+  ["TAK", "Kiedy dostanę bilety lotnicze?"],
+  ["TAK", "Czy dziecko jedzie taniej, jeśli zarezerwuję wakacje w styczniu?"],
+  ["TAK", "Do kiedy mogę złożyć reklamację po powrocie?"],
+  ["CZĘŚĆ", "Czy mogę zabrać psa i ile linia lotnicza policzy za jego przelot?"],
+  ["NIE", "Czy w hotelu w Splicie są jeszcze wolne pokoje na 12 lipca?"],
+  ["NIE", "Jaki jest numer telefonu do rezydenta w Grecji?"],
 ];
 
 const missing = ["OPENROUTER_API_KEY", "OPENROUTER_EMBEDDING_MODEL", "SUPABASE_URL", "SUPABASE_SECRET_KEY"].filter(

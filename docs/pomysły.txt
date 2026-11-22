@@ -4,3 +4,16 @@ pomysły priv - nie do kursu:
 
 2. Anonimizowac backend - sample: "Open-Meteo nie ma prognozy dla tej daty (prognoza sięga maks. 15 dni naprzód). źródło: Open-Meteo (open-meteo.com) "
 
+3. Prawdziwy wykres zamiast obrazu z modelu – narzędzie „wykres” zwraca dane (serie, osie), przeglądarka rysuje SVG. Teraz generujObraz rysuje „wykres” z zmyślonymi proporcjami (słupek EUR 4,46 zł ≈ słupek BTC 246 tys. zł).
+
+4. kursKrypto: kurs historyczny (parametr data, CoinGecko /coins/{id}/history) i kilka monet w jednym wywołaniu – teraz BTC sprzed N dni agent bierze z wyszukiwarki, a równoległe wywołania (BTC + ETH) kończą się limitem 429.
+
+5. waluty: parametr baza (PLN/USD) i kurs krzyżowy liczony na serwerze z tabeli NBP – model pisał „przez bazę USD”, a liczył przez PLN; zmienił też procent zmiany BTC (+1,2% USD vs +5,4% PLN – niewiarygodne).
+
+6. Markdown w odpowiedziach – model pisze **pogrubienia**, czat pokazuje gwiazdki. Renderować markdown albo w instrukcji „bez markdown”.
+
+7. Model przekręca datę tabeli NBP („tabela z 28.04.2004” zamiast dataPublikacji) – reguła: datę tabeli przepisuj dosłownie z wyniku narzędzia.
+
+8. Baza wiedzy: pytanie o „odwołanie” nie trafia we fragmenty o „rezygnacji” (regulamin pkt 3 i 8) i brak listy źródeł 📎 pod odpowiedzią – sprawdzić próg podobieństwa i czy model wypełnia zrodlaBazyWiedzy.
+
+9. Narzędzie czytajProfil – odczyt profilu z etykietą w czacie (teraz profil jest doklejany do instrukcji, więc „co o mnie wiesz?” nie pokazuje ikonki jak przy zapisie). W instrukcji zostawić imię i styl odpowiedzi.
