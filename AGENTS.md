@@ -28,7 +28,7 @@ Projekt rozwijany lekcja po lekcji — opisy oddanych lekcji są w `docs/`.
 | Konfiguracja modeli (rozmowa, embeddingi) i błędy dostawcy | `lib/openrouter-config.ts` (`getOpenRouterConfig`, `getEmbeddingConfig`) |
 | Połączenie z bazą | `lib/supabase.ts`; rozmowy: `lib/conversations.ts` |
 | Endpoint agenta (sesja → tryb) | `app/api/agent/route.ts` → `lib/agent-chat.ts` (chat), `lib/agent-analyze.ts` (analyze) |
-| Narzędzia agenta | `lib/tools.ts`; lista narzędzi składana w `lib/agent-chat.ts` |
+| Narzędzia agenta | `lib/tools/` (plik na narzędzie, wspólne `http.ts`); lista narzędzi czatu: `lib/chat/tools.ts`, strażnik limitów: `lib/chat/tool-guard.ts` |
 | Instrukcja agenta | `lib/instructions.ts` (`CHAT_AGENT_INSTRUCTIONS`, `STUDIO_NOVA_BASE`) |
 | Analiza zdjęć dokumentów (lekcja 3) | `lib/documents.ts` — **to nie jest baza wiedzy** |
 | Baza wiedzy / RAG (lekcja 6) | `lib/knowledge.ts`, strona `/upload` |

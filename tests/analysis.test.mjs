@@ -546,3 +546,42 @@ test("porównaj: brak wszystkich danych dla obu miast – bez modelu, bez poleca
   assert.match(t, /Nie mogę polecić ani Lizbona, ani Porto/);
   assert.doesNotMatch(t, /Polecam/);
 });
+
+// --- Narzędzia: czyste funkcje (lib/tools/) ---
+
+import { dodajDniRobocze, policzDniRobocze } from "../lib/tools/kalendarz.ts";
+import { pogodaNaDzien, pogodaTeraz } from "../lib/tools/pogoda-wynik.ts";
+
+const SWIETA_PL = new Map([["2026-12-25", "Boże Narodzenie"], ["2026-12-26", "Drugi dzień Bożego Narodzenia"]]);
+
+test("dniRobocze: +3 dni robocze od czwartku 24.12 pomija święta i weekend", () => {
+  const r = dodajDniRobocze("2026-12-24", 3, SWIETA_PL);
+  // 25 (pt, święto), 26–27 (weekend), potem 28, 29, 30
+  assert.equal(r.data, "2026-12-30");
+  assert.deepEqual(r.swieta.map((s) => s.data), ["2026-12-25"]);
+  assert.equal(r.weekendy, 2);
+});
+
+test("dniRobocze: ujemne dni liczą wstecz", () => {
+  assert.equal(dodajDniRobocze("2026-12-28", -1, SWIETA_PL).data, "2026-12-24");
+});
+
+test("dniRobocze: liczba dni roboczych w przedziale włącznie", () => {
+  const r = policzDniRobocze("2026-12-21", "2026-12-31", SWIETA_PL);
+  assert.equal(r.dniRobocze, 8); // 21–24, 28–31
+  assert.equal(r.weekendy, 2); // 26 (sob), 27 (nd)
+});
+
+test("pogoda: wynik na dzień z godziną", () => {
+  const d = {
+    daily: { weather_code: [3], temperature_2m_min: [1], temperature_2m_max: [5], precipitation_probability_max: [20], wind_speed_10m_max: [15] },
+    hourly: { time: ["2026-12-01T14:00"], weather_code: [61], temperature_2m: [4], precipitation_probability: [60], wind_speed_10m: [12] },
+  };
+  const w = pogodaNaDzien(d, "2026-12-01", "14:30");
+  assert.equal(w.opis, "pochmurno");
+  assert.deepEqual(w.oGodzinie, { godzina: "14:00", opis: "lekki deszcz", temperaturaC: 4, szansaOpadowProc: 60, wiatrKmH: 12 });
+});
+
+test("pogoda: teraz – brak danych nie wywraca narzędzia", () => {
+  assert.equal(pogodaTeraz({}).opis, "brak danych");
+});

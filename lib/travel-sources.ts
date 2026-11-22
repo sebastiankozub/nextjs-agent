@@ -1,4 +1,4 @@
-// Asystent podróży – pobieranie danych do kart. Te same funkcje co narzędzia agenta (lib/tools.ts):
+// Asystent podróży – pobieranie danych do kart. Te same funkcje co narzędzia agenta (lib/tools/):
 // wywołujemy ich execute bezpośrednio, bez modelu. Każde źródło osobno – awaria jednego nie psuje reszty.
 import { pogoda, strefaCzasowa, swieta, waluty, wikipedia, znajdzMiejsce } from "./tools";
 import {

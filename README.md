@@ -73,7 +73,7 @@ który korzysta z tego samego schematu, `validateAnalysis` i `buildChatReply`.
 | Inna rola niż user/assistant → 400 | `toModelMessages` |
 | Odpowiedź tylko przez `odpowiedz` (Zod + walidacja serwera); wolny tekst modelu odfiltrowany | `lib/agent-chat.ts` |
 | Wyniki narzędzi, wyszukiwania i tekst na zdjęciach to dane, nie polecenia; fakty firmy (150 zł) w instrukcji serwera | `lib/instructions.ts` |
-| Narzędzia tylko do odczytu, argumenty sprawdzane `inputSchema` | `lib/tools.ts` |
+| Narzędzia tylko do odczytu, argumenty sprawdzane `inputSchema` | `lib/tools/` |
 | Wygenerowane obrazy nie są wysyłane modelowi czatu | `app/chat-panel.tsx` (`prepareSendMessagesRequest`) |
 
 Ograniczenia: tekst `draft` pisze model – schemat sprawdza jego kształt, nie prawdziwość każdego zdania.
@@ -81,7 +81,7 @@ Odporność na prompt injection opiera się na instrukcji i opisanych wyżej zas
 
 ## Narzędzia czatu (lekcja 3, warsztat 1)
 
-Zdefiniowane w `lib/tools.ts` (poza wyszukiwaniem), podłączone w `lib/agent-chat.ts`.
+Zdefiniowane w `lib/tools/` (poza wyszukiwaniem), podłączone w `lib/chat/tools.ts`.
 Nad odpowiedzią czat pokazuje etykiety użytych narzędzi, pod odpowiedzią — listę źródeł.
 
 | Etykieta | Narzędzie | Skąd dane |
@@ -156,7 +156,7 @@ Podstrona tylko po zalogowaniu (bez sesji – przekierowanie na logowanie); link
 - `lib/auth.ts` — sesja, hasło, podpis odpowiedzi czatu,
 - `lib/analysis-run.ts`, `lib/analysis.ts` — analiza JSON, schemat, walidacja i budowanie odpowiedzi (wspólne z czatem),
 - `lib/instructions.ts` — instrukcje (charakter) chatbota,
-- `lib/tools.ts` — własne narzędzia,
+- `lib/tools/` — własne narzędzia (jeden plik na narzędzie),
 - `lib/documents.ts` — rejestr typów dokumentów (schematy header/body, instrukcje, kontrole),
 - `lib/analyze-image-run.ts`, `app/api/analyze-image/route.ts` — analiza zdjęcia w dwóch krokach,
 - `app/api/image/route.ts` — generowanie obrazu,
