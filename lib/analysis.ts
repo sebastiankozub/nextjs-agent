@@ -269,7 +269,7 @@ export type KnowledgeSource = { id: number; tytul: string; tresc: string; podobi
 
 export type UnfinishedTask = { zadanie: string; polecenie: string };
 
-/** Jedno wywołanie narzędzia w zadaniu (zapisuje serwer – lib/agent-chat.ts). */
+/** Jedno wywołanie narzędzia w zadaniu (zapisuje serwer – lib/chat/tool-guard.ts). */
 export type ToolCallRecord = { step: number; toolName: string; key: string; output: unknown; ms: number; ok: boolean };
 
 /** Czego nie udało się sprawdzić: narzędzia, których ostatnie wywołanie zwróciło błąd. */

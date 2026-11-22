@@ -252,7 +252,7 @@ ${CHAT_ANSWER_RULE}`;
 
 export type LimitReason = "steps" | "toolCalls" | "time";
 
-/** Dopisywane do instrukcji, gdy pętla musi się skończyć (prepareStep w lib/agent-chat.ts). */
+/** Dopisywane do instrukcji, gdy pętla musi się skończyć (prepareStep w lib/agent-chat.ts, powód: AgentTask.limitBeforeStep). */
 export function buildLastStepRule(reason: LimitReason): string {
   const why = {
     steps: "To jest OSTATNI krok tego zadania",

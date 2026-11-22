@@ -514,10 +514,10 @@ test("podróże: Wikipedia – „r.” przed wielką literą nie kończy zdania
 
 test("strażnik narzędzi: czat NIE podmienia execute we wspólnych obiektach narzędzi", async () => {
   const fs = await import("node:fs");
-  const src = fs.readFileSync(new URL("../lib/agent-chat.ts", import.meta.url), "utf8");
-  // Regresja: „withExecute.execute = guard(…)” przyklejało strażnika do lib/tools.ts na stałe.
+  const src = fs.readFileSync(new URL("../lib/chat/tool-guard.ts", import.meta.url), "utf8");
+  // Regresja (lib/chat/tool-guard.ts): „withExecute.execute = guard(…)” przyklejało strażnika do lib/tools.ts na stałe.
   assert.doesNotMatch(src, /\.execute\s*=\s*guard\(/);
-  assert.match(src, /\{ \.\.\.t, execute: guard\(name, execute\) \}/);
+  assert.match(src, /\{ \.\.\.\(t as object\), execute: guard\(task, name, execute\) \}/);
 });
 
 // --- Asystent podróży: tryb „Porównaj” ---
